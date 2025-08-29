@@ -337,7 +337,7 @@ export class ProjectModel {
           .orWhereExists(function() {
             this.select('*')
               .from('project_members')
-              .whereRaw('project_members.projectId = projects.id')
+              .whereRaw('"project_members"."projectId" = "projects"."id"')
               .where('userId', userId)
               .where('status', 'accepted');
           });
@@ -358,7 +358,7 @@ export class ProjectModel {
           .orWhereExists(function() {
             this.select('*')
               .from('project_members')
-              .whereRaw('project_members.projectId = projects.id')
+              .whereRaw('"project_members"."projectId" = "projects"."id"')
               .where('userId', userId)
               .where('status', 'accepted');
           });
@@ -397,7 +397,7 @@ export class ProjectModel {
           .orWhereExists(function() {
             this.select('*')
               .from('project_members')
-              .whereRaw('project_members.projectId = projects.id')
+              .whereRaw('"project_members"."projectId" = "projects"."id"')
               .where('userId', userId)
               .where('status', 'accepted');
           });

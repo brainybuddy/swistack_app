@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "dev": "concurrently -n \"shared,backend,frontend\" -c \"yellow,green,blue\" \"npm run dev -w @swistack/shared\" \"npm run dev -w @swistack/backend\" \"npm run dev -w @swistack/frontend\"",
+    "dev:restart": "node dev-restart.js",
+    "dev:fresh": "node dev-restart.js",
     "build": "npm run build -ws --if-present",
     "build:shared": "npm run build -w @swistack/shared",
     "build:backend": "npm run build -w @swistack/backend",

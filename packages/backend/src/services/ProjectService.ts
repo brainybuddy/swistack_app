@@ -10,6 +10,8 @@ export class ProjectService {
     data: CreateProjectRequest
   ): Promise<DatabaseProject> {
     try {
+      console.log(`🚀 Creating project for user ${userId}:`, data);
+      
       // Get template
       const template = await TemplateService.getByKey(data.template);
       if (!template) {
@@ -29,6 +31,7 @@ export class ProjectService {
 
       // Create project files from template
       await this.createProjectFromTemplate(project.id, template, userId);
+      console.log(`✅ Project ${project.id} created successfully with template files`);
 
       return project;
     } catch (error) {
@@ -250,6 +253,7 @@ export class ProjectService {
     userId: string
   ): Promise<void> {
     try {
+      console.log(`📂 Creating project ${projectId} from template:`, template.name, `(${template.files?.length || 0} files)`);
       const files = template.files || [];
       const createdDirectories = new Set<string>();
 
@@ -309,7 +313,7 @@ export class ProjectService {
               content = undefined; // Don't store large content in database
             }
 
-            await ProjectFileModel.create({
+            const createdFile = await ProjectFileModel.create({
               projectId,
               path: file.path,
               name: fileName,
@@ -323,6 +327,7 @@ export class ProjectService {
               parentId: parentId || undefined,
               createdBy: userId,
             });
+            console.log(`✅ Created file: ${file.path} (ID: ${createdFile.id}, Content length: ${content?.length || 0})`);
           }
         } catch (error) {
           console.error(`Failed to create file ${file.path}:`, error);

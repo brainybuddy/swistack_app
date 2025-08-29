@@ -19,6 +19,7 @@ import formatterRouter from './routes/formatter';
 import searchRouter from './routes/search';
 import autosaveRouter from './routes/autosave';
 import { invitationsRouter } from './routes/invitations';
+import terminalRouter from './routes/terminal';
 import { storageService } from './services/StorageService';
 import { TemplateService } from './services/TemplateService';
 import { HealthCheckService } from './services/HealthCheckService';
@@ -101,6 +102,7 @@ app.get('/', (req, res) => {
       formatter: '/api/formatter',
       search: '/api/search',
       autosave: '/api/autosave',
+      terminal: '/api/terminal',
     },
   });
 });
@@ -116,6 +118,7 @@ app.use('/api/formatter', formatterRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/autosave', autosaveRouter);
 app.use('/api/invitations', invitationsRouter);
+app.use('/api/terminal', terminalRouter);
 
 // Global error handler
 app.use((error: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -46,11 +46,52 @@ export default function RepositoriesView() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  
+  // Delete confirmation modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch projects on component mount
   useEffect(() => {
     fetchProjects();
   }, [searchQuery, filterType, sortBy]);
+
+  // Click outside and escape key handlers for dropdown menus
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (actionMenuOpen) {
+        const target = event.target as Element;
+        const isMenuButton = target.closest('[data-menu-button]');
+        const isMenuContent = target.closest('[data-menu-content]');
+        
+        if (!isMenuButton && !isMenuContent) {
+          setActionMenuOpen(null);
+        }
+      }
+    };
+
+    const handleEscapeKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (showDeleteModal) {
+          setShowDeleteModal(false);
+          setProjectToDelete(null);
+          setDeleteConfirmText('');
+        } else if (actionMenuOpen) {
+          setActionMenuOpen(null);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscapeKey);
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscapeKey);
+    };
+  }, [actionMenuOpen, showDeleteModal]);
 
   const fetchProjects = async () => {
     if (!user) return;
@@ -63,7 +104,15 @@ export default function RepositoriesView() {
         page: '1',
         limit: '50',
         search: searchQuery,
-        sortBy: sortBy === 'stars' ? 'updatedAt' : sortBy, // Map to available sort options
+        sortBy: (() => {
+          // Map frontend sort values to backend schema values
+          switch (sortBy) {
+            case 'updated': return 'updatedAt';
+            case 'stars': return 'updatedAt'; // No stars field, use updatedAt
+            case 'name': return 'name';
+            default: return 'updatedAt';
+          }
+        })(),
         sortOrder: 'desc',
       });
 
@@ -124,9 +173,22 @@ export default function RepositoriesView() {
     return `${Math.floor(days / 30)} months ago`;
   };
 
-  const formatFileSize = (bytes: number): string => {
+  const formatFileSize = (bytes: number | string | null | undefined): string => {
+    // Handle invalid input
+    if (bytes === null || bytes === undefined) {
+      return '0 B';
+    }
+    
+    // Convert string to number if needed
+    const numBytes = typeof bytes === 'string' ? parseFloat(bytes) : bytes;
+    
+    // Check for invalid numbers
+    if (isNaN(numBytes) || numBytes < 0) {
+      return '0 B';
+    }
+    
     const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
+    let size = numBytes;
     let unitIndex = 0;
     
     while (size >= 1024 && unitIndex < units.length - 1) {
@@ -141,43 +203,183 @@ export default function RepositoriesView() {
   const handleProjectAction = async (projectId: string, action: string) => {
     const project = projects.find(p => p.id === projectId);
     if (!project) return;
-
+    
     try {
       switch (action) {
         case 'open':
-          router.push(`/editor/${project.slug}`);
+          console.log('Opening project:', project.id, project.name);
+          console.log('Navigating to:', `/editor?projectId=${project.id}`);
+          router.push(`/editor?projectId=${project.id}`);
           break;
+          
         case 'settings':
-          router.push(`/editor/${project.slug}?tab=settings`);
+          router.push(`/editor?projectId=${project.id}&tab=settings`);
           break;
+          
         case 'duplicate':
-          // Mock duplicate functionality
-          console.log('Duplicating project:', project.name);
-          // TODO: Implement actual duplicate API call
-          break;
-        case 'archive':
-          // Mock archive functionality
-          console.log('Archiving project:', project.name);
-          // TODO: Implement actual archive API call
-          break;
-        case 'delete':
-          const confirmed = confirm(`Are you sure you want to delete "${project.name}"? This action cannot be undone.`);
-          if (confirmed) {
-            console.log('Deleting project:', project.name);
-            // TODO: Implement actual delete API call
-            // For now, remove from local state
-            setProjects(prev => prev.filter(p => p.id !== projectId));
+          if (confirm(`Duplicate "${project.name}"?`)) {
+            const duplicateName = `${project.name} (Copy)`;
+            const response = await httpClient.post(`/api/projects/${project.id}/duplicate`, {
+              name: duplicateName
+            });
+            
+            if (response.success) {
+              // Show success notification
+              if ((window as any).addNotification) {
+                (window as any).addNotification({
+                  type: 'success',
+                  title: 'Project Duplicated',
+                  message: `"${duplicateName}" created successfully`,
+                  persistent: false
+                });
+              }
+              // Refresh project list
+              fetchProjects();
+            } else {
+              throw new Error(response.error || 'Failed to duplicate project');
+            }
           }
           break;
-        case 'download':
-          console.log('Downloading project:', project.name);
-          // TODO: Implement project download
+          
+        case 'archive':
+          if (confirm(`Archive "${project.name}"? You can restore it later from archived projects.`)) {
+            const response = await httpClient.put(`/api/projects/${project.id}`, {
+              status: 'archived'
+            });
+            
+            if (response.success) {
+              if ((window as any).addNotification) {
+                (window as any).addNotification({
+                  type: 'info',
+                  title: 'Project Archived',
+                  message: `"${project.name}" has been archived`,
+                  persistent: false
+                });
+              }
+              // Refresh project list
+              fetchProjects();
+            } else {
+              throw new Error(response.error || 'Failed to archive project');
+            }
+          }
           break;
+          
+        case 'delete':
+          setProjectToDelete(project);
+          setShowDeleteModal(true);
+          setDeleteConfirmText('');
+          break;
+          
+        case 'download':
+          // Create download link for project export
+          if ((window as any).addNotification) {
+            (window as any).addNotification({
+              type: 'info',
+              title: 'Download Starting',
+              message: `Preparing "${project.name}" for download...`,
+              persistent: false
+            });
+          }
+          
+          // Create a simple project export
+          const exportData = {
+            name: project.name,
+            description: project.description,
+            template: project.template,
+            createdAt: project.createdAt,
+            updatedAt: project.updatedAt,
+            isPublic: project.isPublic,
+            // Add more project metadata as needed
+          };
+          
+          const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+            type: 'application/json'
+          });
+          
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_export.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          
+          if ((window as any).addNotification) {
+            (window as any).addNotification({
+              type: 'success',
+              title: 'Download Complete',
+              message: `"${project.name}" export downloaded`,
+              persistent: false
+            });
+          }
+          break;
+          
+        default:
+          console.log('Unknown action:', action);
       }
     } catch (error) {
-      console.error(`Error performing action ${action}:`, error);
+      console.error('Error handling project action:', error);
+      
+      // Show error notification
+      if ((window as any).addNotification) {
+        (window as any).addNotification({
+          type: 'error',
+          title: 'Action Failed',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
+          persistent: true
+        });
+      } else {
+        alert(`Error: ${error instanceof Error ? error.message : 'An unexpected error occurred'}`);
+      }
+    } finally {
+      setActionMenuOpen(null);
     }
-    setActionMenuOpen(null);
+  };
+
+  // Handle confirmed project deletion
+  const handleConfirmedDelete = async () => {
+    if (!projectToDelete) return;
+    
+    setIsDeleting(true);
+    try {
+      const response = await httpClient.delete(`/api/projects/${projectToDelete.id}`);
+      
+      if (response.success) {
+        if ((window as any).addNotification) {
+          (window as any).addNotification({
+            type: 'success',
+            title: 'Project Deleted',
+            message: `"${projectToDelete.name}" has been permanently deleted`,
+            persistent: false
+          });
+        }
+        // Refresh project list
+        fetchProjects();
+        // Close modal
+        setShowDeleteModal(false);
+        setProjectToDelete(null);
+        setDeleteConfirmText('');
+      } else {
+        throw new Error(response.error || 'Failed to delete project');
+      }
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      
+      // Show error notification
+      if ((window as any).addNotification) {
+        (window as any).addNotification({
+          type: 'error',
+          title: 'Delete Failed',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
+          persistent: true
+        });
+      } else {
+        alert(`Error: ${error instanceof Error ? error.message : 'An unexpected error occurred'}`);
+      }
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const toggleProjectSelection = (projectId: string) => {
@@ -377,7 +579,9 @@ export default function RepositoriesView() {
                   onClick={(e) => e.stopPropagation()}
                   className="w-4 h-4 text-teal-600 bg-gray-700 border-gray-600 rounded focus:ring-teal-500"
                 />
-                <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className={`flex items-center space-x-1 transition-opacity ${
+                  actionMenuOpen === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                }`}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -400,17 +604,24 @@ export default function RepositoriesView() {
                   </button>
                   <div className="relative">
                     <button
+                      data-menu-button
                       onClick={(e) => {
                         e.stopPropagation();
                         setActionMenuOpen(actionMenuOpen === project.id ? null : project.id);
                       }}
-                      className="p-1 hover:bg-gray-700 rounded"
+                      className="p-1 hover:bg-gray-700 rounded transition-colors"
                     >
                       <MoreVertical className="w-4 h-4 text-gray-400" />
                     </button>
                     {actionMenuOpen === project.id && (
-                      <div className="absolute right-0 top-8 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10">
-                        <div className="p-2">
+                      <>
+                        {/* Backdrop for mobile */}
+                        <div className="fixed inset-0 z-10 md:hidden" />
+                        <div 
+                          data-menu-content
+                          className="absolute right-0 top-8 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20"
+                        >
+                          <div className="p-2">
                           <button
                             onClick={() => handleProjectAction(project.id, 'duplicate')}
                             className="w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-700 rounded"
@@ -441,7 +652,8 @@ export default function RepositoriesView() {
                             <span>Delete</span>
                           </button>
                         </div>
-                      </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -528,7 +740,9 @@ export default function RepositoriesView() {
                 <span>{formatFileSize(project.storageUsed)}</span>
               </div>
 
-              <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className={`flex items-center space-x-1 transition-opacity ${
+                actionMenuOpen === project.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              }`}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -541,17 +755,24 @@ export default function RepositoriesView() {
                 </button>
                 <div className="relative">
                   <button
+                    data-menu-button
                     onClick={(e) => {
                       e.stopPropagation();
                       setActionMenuOpen(actionMenuOpen === project.id ? null : project.id);
                     }}
-                    className="p-2 hover:bg-gray-700 rounded"
+                    className="p-2 hover:bg-gray-700 rounded transition-colors"
                   >
                     <MoreVertical className="w-4 h-4 text-gray-400" />
                   </button>
                   {actionMenuOpen === project.id && (
-                    <div className="absolute right-0 top-8 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10">
-                      <div className="p-2">
+                    <>
+                      {/* Backdrop for mobile */}
+                      <div className="fixed inset-0 z-10 md:hidden" />
+                      <div 
+                        data-menu-content
+                        className="absolute right-0 top-8 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-20"
+                      >
+                        <div className="p-2">
                         <button
                           onClick={() => handleProjectAction(project.id, 'settings')}
                           className="w-full flex items-center space-x-2 px-3 py-2 text-sm hover:bg-gray-700 rounded"
@@ -589,7 +810,8 @@ export default function RepositoriesView() {
                           <span>Delete</span>
                         </button>
                       </div>
-                    </div>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -644,6 +866,87 @@ export default function RepositoriesView() {
               <div>
                 {projects.filter(p => !p.isPublic).length} private • {projects.filter(p => p.isPublic).length} public
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && projectToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 p-6 w-full max-w-md">
+            {/* Header */}
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white">Delete Project</h3>
+                <p className="text-sm text-gray-400">This action cannot be undone</p>
+              </div>
+            </div>
+
+            {/* Warning Message */}
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-4">
+              <p className="text-sm text-red-400 mb-2">
+                <strong>Warning:</strong> You are about to permanently delete:
+              </p>
+              <p className="text-white font-medium">"{projectToDelete.name}"</p>
+              <p className="text-sm text-gray-400 mt-2">
+                All files, data, and history will be permanently deleted.
+              </p>
+            </div>
+
+            {/* Confirmation Input */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Type the project name to confirm deletion:
+              </label>
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder={projectToDelete.name}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                disabled={isDeleting}
+              />
+              {deleteConfirmText && deleteConfirmText !== projectToDelete.name && (
+                <p className="text-xs text-red-400 mt-1">
+                  Project name doesn't match
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setProjectToDelete(null);
+                  setDeleteConfirmText('');
+                }}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-gray-300 hover:text-white transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmedDelete}
+                disabled={isDeleting || deleteConfirmText !== projectToDelete.name}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center space-x-2 disabled:cursor-not-allowed"
+              >
+                {isDeleting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Project</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

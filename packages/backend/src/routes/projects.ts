@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { ProjectService } from '../services/ProjectService';
 import { ProjectModel } from '../models/Project';
+import { ProjectFileModel } from '../models/ProjectFile';
 import { TemplateService } from '../services/TemplateService';
 import { ProjectUpdateService } from '../services/ProjectUpdateService';
 import { authenticateToken } from '../middleware/auth';
@@ -40,9 +41,11 @@ router.get('/templates', async (req: Request, res: Response) => {
 router.get('/templates/:key', async (req: Request, res: Response) => {
   try {
     const { key } = req.params;
+    console.log(`🔍 Fetching template with key: ${key}`);
     const template = await TemplateService.getByKey(key);
     
     if (!template) {
+      console.log(`❌ Template not found: ${key}`);
       res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
         error: 'Template not found',
@@ -50,12 +53,16 @@ router.get('/templates/:key', async (req: Request, res: Response) => {
       return;
     }
     
+    console.log(`✅ Template found: ${template.name} (${template.key})`);
+    console.log(`📁 Template has ${Object.keys(template.files || {}).length} files`);
+    
     res.status(HTTP_STATUS.OK).json({
       success: true,
       data: template,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to fetch template';
+    console.error(`❌ Error fetching template ${req.params.key}:`, message);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: message,
@@ -66,6 +73,7 @@ router.get('/templates/:key', async (req: Request, res: Response) => {
 // Create project
 router.post('/', async (req: Request, res: Response) => {
   try {
+    console.log('🚀 PROJECT CREATION REQUEST from user:', req.user?.email, 'Data:', req.body);
     const validatedData = createProjectSchema.parse(req.body);
     
     if (!req.user) {
@@ -510,6 +518,59 @@ router.get('/:id/updates', async (req: Request, res: Response) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to get project updates';
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: message,
+    });
+  }
+});
+
+// Get project files
+router.get('/:id/files', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    if (!req.user) {
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        error: 'Authentication required',
+      });
+      return;
+    }
+
+    // Check if user has access to project by trying to fetch it
+    const project = await ProjectModel.findById(id, req.user.id);
+    if (!project) {
+      res.status(HTTP_STATUS.FORBIDDEN).json({
+        success: false,
+        error: 'Access denied or project not found',
+      });
+      return;
+    }
+
+    // Get project files
+    console.log(`Fetching files for project: ${id}`);
+    const files = await ProjectFileModel.getProjectTree(id);
+    
+    // Log file details for debugging
+    console.log(`Found ${files.length} files for project ${id}`);
+    const actualFiles = files.filter(f => f.type === 'file');
+    if (actualFiles.length > 0) {
+      console.log('Sample file data:', actualFiles.slice(0, 3).map(f => ({
+        path: f.path,
+        type: f.type,
+        hasContent: !!f.content,
+        contentLength: f.content?.length || 0,
+        storageKey: f.storageKey
+      })));
+    }
+    
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: files,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch project files';
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: message,

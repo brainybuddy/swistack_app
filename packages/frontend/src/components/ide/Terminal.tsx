@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Terminal as TerminalIcon,
   X,
@@ -49,43 +50,91 @@ export default function Terminal({
   isMinimized = false,
   onToggleMinimize 
 }: TerminalProps) {
+  const { user, httpClient } = useAuth();
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('');
   const [isConnected, setIsConnected] = useState(false);
   const [fontSize, setFontSize] = useState(14);
   const [showSettings, setShowSettings] = useState(false);
+  const [backendSessionId, setBackendSessionId] = useState<string>('');
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sessionIdRef = useRef<string>('');
 
-  // Initialize with default session
+  // Initialize with backend terminal session
   useEffect(() => {
-    const defaultSession: TerminalSession = {
-      id: 'main',
-      name: 'Terminal',
-      cwd: projectId ? `/workspace/${projectId}` : '/workspace',
-      isActive: true,
-      output: [
-        {
-          id: '1',
-          type: 'system',
-          content: 'Welcome to Swistack Terminal',
-          timestamp: new Date()
-        },
-        {
-          id: '2',
-          type: 'system',
-          content: `Connected to project workspace`,
-          timestamp: new Date()
+    const initializeTerminal = async () => {
+      if (!projectId || !user || !httpClient) {
+        console.log('Terminal initialization skipped - missing requirements:', { projectId, user: !!user, httpClient: !!httpClient });
+        return;
+      }
+
+      // Prevent multiple initializations
+      if (sessionIdRef.current) {
+        console.log('Terminal already initialized, skipping:', sessionIdRef.current);
+        return;
+      }
+
+      try {
+        console.log('Creating terminal session for project:', projectId);
+        const response = await httpClient.post('/api/terminal/sessions', {
+          projectId: projectId
+        });
+
+        if (response.success && response.data?.sessionId) {
+          const sessionId = response.data.sessionId;
+          setBackendSessionId(sessionId);
+          sessionIdRef.current = sessionId;
+
+          const defaultSession: TerminalSession = {
+            id: 'main',
+            name: 'Terminal',
+            cwd: projectId ? `/workspace/${projectId}` : '/workspace',
+            isActive: true,
+            output: [
+              {
+                id: '1',
+                type: 'system',
+                content: 'Welcome to Swistack Terminal',
+                timestamp: new Date()
+              },
+              {
+                id: '2',
+                type: 'system',
+                content: `Connected to project workspace`,
+                timestamp: new Date()
+              }
+            ],
+            input: '',
+            isRunning: false
+          };
+
+          setSessions([defaultSession]);
+          setActiveSessionId('main');
+          setIsConnected(true);
+          console.log('Terminal session created successfully:', sessionId);
+        } else {
+          console.error('Failed to create terminal session:', response);
+          setIsConnected(false);
         }
-      ],
-      input: '',
-      isRunning: false
+      } catch (error) {
+        console.error('Error creating terminal session:', error);
+        setIsConnected(false);
+      }
     };
 
-    setSessions([defaultSession]);
-    setActiveSessionId('main');
-    setIsConnected(true);
-  }, [projectId]);
+    initializeTerminal();
+
+    // Cleanup function
+    return () => {
+      if (sessionIdRef.current && httpClient) {
+        console.log('Cleaning up terminal session:', sessionIdRef.current);
+        httpClient.delete(`/api/terminal/sessions/${sessionIdRef.current}`)
+          .catch(error => console.error('Error terminating terminal session:', error));
+        sessionIdRef.current = '';
+      }
+    };
+  }, [projectId, user?.id, httpClient]);
 
   // Auto-scroll to bottom when new output is added
   useEffect(() => {
@@ -118,99 +167,57 @@ export default function Terminal({
 
   const executeCommand = async (command: string) => {
     const session = getActiveSession();
-    if (!session || !command.trim()) return;
+    if (!session || !command.trim() || !backendSessionId || !httpClient) return;
 
-    // Add command to output
-    addOutput(session.id, {
-      type: 'command',
-      content: `${session.cwd}$ ${command}`
-    });
-
-    // Clear input
+    // Clear input and set running state
     updateSession(session.id, { input: '', isRunning: true });
 
-    // Mock command execution (replace with actual WebSocket/API call)
-    setTimeout(() => {
-      const output = mockCommandExecution(command, session.cwd);
+    try {
+      console.log('Executing command:', command);
+      const response = await httpClient.post(`/api/terminal/sessions/${backendSessionId}/execute`, {
+        command: command
+      });
+
+      if (response.success && response.data?.outputs) {
+        // Add all output lines from backend
+        const outputs = response.data.outputs;
+        for (const output of outputs) {
+          const outputType = output.type === 'command' ? 'command' : 
+                           output.type === 'stderr' ? 'error' : 'output';
+          
+          // Handle clear screen command
+          if (output.content === 'CLEAR_SCREEN') {
+            updateSession(session.id, { output: [] });
+            continue;
+          }
+          
+          addOutput(session.id, {
+            type: outputType,
+            content: output.content
+          });
+        }
+
+        // Update working directory if changed
+        if (response.data.cwd) {
+          updateSession(session.id, { cwd: response.data.cwd });
+        }
+      } else {
+        addOutput(session.id, {
+          type: 'error',
+          content: `Error: ${response.error || 'Command execution failed'}`
+        });
+      }
+    } catch (error) {
+      console.error('Error executing command:', error);
       addOutput(session.id, {
-        type: output.isError ? 'error' : 'output',
-        content: output.result
+        type: 'error',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
       });
-      
-      updateSession(session.id, { 
-        isRunning: false,
-        cwd: output.newCwd || session.cwd
-      });
-    }, Math.random() * 1000 + 500); // Random delay 500-1500ms
+    } finally {
+      updateSession(session.id, { isRunning: false });
+    }
   };
 
-  const mockCommandExecution = (command: string, currentDir: string) => {
-    const cmd = command.trim().toLowerCase();
-    
-    if (cmd.startsWith('cd ')) {
-      const path = cmd.substring(3).trim();
-      return {
-        result: '',
-        newCwd: path.startsWith('/') ? path : `${currentDir}/${path}`,
-        isError: false
-      };
-    }
-
-    if (cmd === 'ls' || cmd === 'dir') {
-      return {
-        result: 'src/\npackage.json\nREADME.md\n.gitignore\nnode_modules/',
-        isError: false
-      };
-    }
-
-    if (cmd === 'pwd') {
-      return {
-        result: currentDir,
-        isError: false
-      };
-    }
-
-    if (cmd.startsWith('npm ')) {
-      if (cmd === 'npm install') {
-        return {
-          result: 'added 1204 packages in 45s\n\n89 packages are looking for funding',
-          isError: false
-        };
-      }
-      if (cmd === 'npm start' || cmd === 'npm run dev') {
-        return {
-          result: '> dev\n> next dev\n\nready - started server on 0.0.0.0:3000',
-          isError: false
-        };
-      }
-    }
-
-    if (cmd === 'clear' || cmd === 'cls') {
-      // Handle clear separately
-      updateSession(activeSessionId, { output: [] });
-      return { result: '', isError: false };
-    }
-
-    if (cmd === 'help') {
-      return {
-        result: 'Available commands:\n  ls, pwd, cd, npm, git, clear, help\n\nTip: Use Tab for autocompletion',
-        isError: false
-      };
-    }
-
-    if (cmd.startsWith('git ')) {
-      return {
-        result: 'On branch main\nYour branch is up to date with \'origin/main\'.\n\nnothing to commit, working tree clean',
-        isError: false
-      };
-    }
-
-    // Default: command not found
-    return {
-      result: `${command}: command not found`,
-      isError: true
-    };
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {

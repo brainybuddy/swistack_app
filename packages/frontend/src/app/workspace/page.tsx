@@ -42,9 +42,8 @@ export default function WorkspacePage() {
   const router = useRouter();
 
   const handleTemplateSelect = (template: any) => {
-    // Navigate to editor with template data
-    const templateData = encodeURIComponent(JSON.stringify(template));
-    router.push(`/editor?template=${templateData}`);
+    // Navigate to editor with template key instead of full template data
+    router.push(`/editor?templateKey=${template.key}`);
   };
 
 

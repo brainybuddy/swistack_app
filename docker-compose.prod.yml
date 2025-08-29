@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - swistack-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile.prod
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:3001
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      - swistack-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: swistack
+      POSTGRES_USER: swistack
+      POSTGRES_PASSWORD: swistack_prod_password
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - swistack-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - swistack-network
+    restart: unless-stopped
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+
+networks:
+  swistack-network:
+    driver: bridge

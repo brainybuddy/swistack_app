@@ -1,0 +1,27 @@
+version: '3.8'
+
+# This file provides development-specific overrides
+services:
+  frontend:
+    volumes:
+      # Mount source code for hot reloading
+      - ./packages/frontend:/app/packages/frontend
+      - ./packages/shared:/app/packages/shared
+      # Exclude node_modules to use container's version
+      - /app/packages/frontend/node_modules
+      - /app/packages/shared/node_modules
+      - /app/node_modules
+    environment:
+      # Enable hot reloading
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+
+  backend:
+    volumes:
+      # Mount source code for hot reloading
+      - ./packages/backend:/app/packages/backend
+      - ./packages/shared:/app/packages/shared
+      # Exclude node_modules to use container's version
+      - /app/packages/backend/node_modules
+      - /app/packages/shared/node_modules
+      - /app/node_modules

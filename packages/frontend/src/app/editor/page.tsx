@@ -62,6 +62,7 @@ import Terminal from '@/components/ide/Terminal';
 import NotificationSystem from '@/components/notifications/NotificationSystem';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 import LivePreview from '@/components/preview/LivePreview';
+import AIAssistantPanel from '@/components/ai/AIAssistantPanel';
 import { getTemplateByKey } from '@/utils/templateManager';
 
 // File tree structure
@@ -215,9 +216,7 @@ export default function EditorPage() {
   const [activeTab, setActiveTab] = useState<string>('src/App.js');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['src']));
   
-  // Chat state
-  const [messages, setMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
-  const [inputMessage, setInputMessage] = useState('');
+  // AI Assistant is now handled by AIAssistantPanel component
   
   // Monaco Editor state  
   const [editorValue, setEditorValue] = useState('');
@@ -305,25 +304,10 @@ export default function EditorPage() {
           const project = JSON.parse(decodeURIComponent(projectData));
           setTemplate(project);
           
-          // Set AI-specific welcome message
-          if (project.createdBy === 'ai') {
-            setMessages([
-              { 
-                role: 'assistant', 
-                content: `Welcome to your AI-generated project "${project.name}"! 🎉\n\nI've created this project based on your description: "${project.description}"\n\nThe project structure is ready and includes all the necessary files. You can start editing the code or ask me any questions about the implementation. What would you like to work on first?`
-              }
-            ]);
-          } else {
-            setMessages([
-              { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-            ]);
-          }
+          // AI welcome message is now handled by AIAssistantPanel
         } catch (e) {
           console.error('Error parsing project data:', e);
           setTemplate({ name: 'New Project', language: 'JavaScript', description: 'A new project' });
-          setMessages([
-            { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-          ]);
         }
         return;
       }
@@ -402,9 +386,7 @@ export default function EditorPage() {
             setCurrentProjectId(project.id);
             console.log('🔧 Project ID set for auto-save:', project.id);
             
-            setMessages([
-              { role: 'assistant', content: `Welcome back to "${project.name}"! I can help you continue developing your project. What would you like to work on?` }
-            ]);
+            // AI welcome message is now handled by AIAssistantPanel
             return;
           } else {
             console.log('❌ Project response failed or no data:', projectResponse);
@@ -432,9 +414,7 @@ export default function EditorPage() {
           if (response.success && response.data) {
             console.log('Template loaded from backend:', response.data);
             setTemplate(response.data);
-            setMessages([
-              { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-            ]);
+            // AI welcome message is now handled by AIAssistantPanel
             return;
           }
         } catch (e) {
@@ -448,20 +428,14 @@ export default function EditorPage() {
         try {
           const parsedTemplate = JSON.parse(decodeURIComponent(templateData));
           setTemplate(parsedTemplate);
-          setMessages([
-            { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-          ]);
+          // AI welcome message is now handled by AIAssistantPanel
         } catch (e) {
           setTemplate({ name: 'New Project', language: 'JavaScript', description: 'A new project' });
-          setMessages([
-            { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-          ]);
+          // AI welcome message is now handled by AIAssistantPanel
         }
       } else {
         setTemplate({ name: 'New Project', language: 'JavaScript', description: 'A new project' });
-        setMessages([
-          { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-        ]);
+        // AI welcome message is now handled by AIAssistantPanel
       }
     };
 
@@ -847,19 +821,7 @@ export default function EditorPage() {
     }
   };
 
-  const sendMessage = () => {
-    if (!inputMessage.trim()) return;
-    
-    setMessages([...messages, { role: 'user', content: inputMessage }]);
-    // Simulate AI response
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: `I understand you want help with: "${inputMessage}". Let me assist you with that.` 
-      }]);
-    }, 1000);
-    setInputMessage('');
-  };
+  // AI messaging is now handled by AIAssistantPanel component
 
   const createNewFile = () => {
     const fileName = prompt('Enter file name:');
@@ -1447,76 +1409,13 @@ export default function EditorPage() {
             {/* Tab Content */}
             <div className="flex-1 overflow-hidden">
               {activeTab === 'ai-chat' ? (
-                /* AI Chat Interface */
-                <div className="h-full flex flex-col">
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {/* Chat Header */}
-                    {messages.length === 0 && (
-                      <div className="text-center py-4">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-teal-600/20 rounded-2xl mb-3">
-                          <Sparkles className="w-8 h-8 text-teal-400" />
-                        </div>
-                        <h2 className="text-xl font-semibold text-white mb-1">AI Assistant</h2>
-                        <p className="text-sm text-gray-400">I can help you write code, debug, and answer questions</p>
-                      </div>
-                    )}
-
-                    {/* Messages */}
-                    <div className="space-y-4">
-                      {messages.map((msg, idx) => (
-                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-2xl ${msg.role === 'user' ? 'order-2' : ''}`}>
-                            <div className="flex items-start space-x-3">
-                              {msg.role === 'assistant' && (
-                                <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center flex-shrink-0">
-                                  <Bot className="w-4 h-4 text-white" />
-                                </div>
-                              )}
-                              <div className={`rounded-lg p-4 ${
-                                msg.role === 'user' 
-                                  ? 'bg-teal-600/20 text-white' 
-                                  : 'bg-gray-800 text-gray-300'
-                              }`}>
-                                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                              </div>
-                              {msg.role === 'user' && (
-                                <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
-                                  <User className="w-4 h-4 text-white" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  {/* Input Area */}
-                  <div className="border-t border-gray-800 p-4">
-                    <div className="flex space-x-3">
-                      <input
-                        type="text"
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                        placeholder="Ask anything about your code..."
-                        className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 transition-colors"
-                      />
-                      <button
-                        onClick={sendMessage}
-                        className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex items-center space-x-2"
-                      >
-                        <Send className="w-4 h-4" />
-                        <span className="text-sm">Send</span>
-                      </button>
-                    </div>
-                    <div className="mt-2 flex items-center space-x-4 text-xs text-gray-500">
-                      <span>Press Enter to send</span>
-                      <span>•</span>
-                      <span>Shift+Enter for new line</span>
-                    </div>
-                  </div>
-                </div>
+                <AIAssistantPanel
+                  projectId={projectData.id}
+                  currentFile={activeTab !== 'ai-chat' ? activeTab : undefined}
+                  selectedCode={undefined} // TODO: Get selected code from Monaco editor
+                  fileContent={editorValue}
+                  className="h-full"
+                />
               ) : (
                 /* Enhanced Code Editor */
                 <div className={`h-full relative overflow-hidden ${

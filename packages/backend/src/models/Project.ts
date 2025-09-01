@@ -331,17 +331,30 @@ export class ProjectModel {
     
     // If userId provided, check if user has access
     if (userId) {
-      query = query.andWhere(function() {
-        this.where('isPublic', true)
-          .orWhere('ownerId', userId)
-          .orWhereExists(function() {
-            this.select('*')
-              .from('project_members')
-              .whereRaw('project_members.projectId = projects.id')
-              .where('userId', userId)
-              .where('status', 'accepted');
-          });
-      });
+      try {
+        const tableExists = await db.schema.hasTable('project_members');
+        
+        query = query.andWhere(function() {
+          this.where('isPublic', true)
+            .orWhere('ownerId', userId);
+            
+          if (tableExists) {
+            this.orWhereExists(function() {
+              this.select('*')
+                .from('project_members')
+                .whereRaw('project_members."projectId" = projects.id')
+                .where('userId', userId)
+                .where('status', 'accepted');
+            });
+          }
+        });
+      } catch (error) {
+        // Fallback to basic access check
+        query = query.andWhere(function() {
+          this.where('isPublic', true)
+            .orWhere('ownerId', userId);
+        });
+      }
     }
     
     const project = await query.first();
@@ -352,17 +365,30 @@ export class ProjectModel {
     let query = db('projects').where('slug', slug);
     
     if (userId) {
-      query = query.andWhere(function() {
-        this.where('isPublic', true)
-          .orWhere('ownerId', userId)
-          .orWhereExists(function() {
-            this.select('*')
-              .from('project_members')
-              .whereRaw('project_members.projectId = projects.id')
-              .where('userId', userId)
-              .where('status', 'accepted');
-          });
-      });
+      try {
+        const tableExists = await db.schema.hasTable('project_members');
+        
+        query = query.andWhere(function() {
+          this.where('isPublic', true)
+            .orWhere('ownerId', userId);
+            
+          if (tableExists) {
+            this.orWhereExists(function() {
+              this.select('*')
+                .from('project_members')
+                .whereRaw('project_members."projectId" = projects.id')
+                .where('userId', userId)
+                .where('status', 'accepted');
+            });
+          }
+        });
+      } catch (error) {
+        // Fallback to basic access check
+        query = query.andWhere(function() {
+          this.where('isPublic', true)
+            .orWhere('ownerId', userId);
+        });
+      }
     }
     
     const project = await query.first();
@@ -391,41 +417,82 @@ export class ProjectModel {
       sortOrder = 'desc',
     } = options;
 
-    let query = db('projects')
-      .where(function() {
-        this.where('ownerId', userId)
-          .orWhereExists(function() {
-            this.select('*')
-              .from('project_members')
-              .whereRaw('project_members.projectId = projects.id')
-              .where('userId', userId)
-              .where('status', 'accepted');
-          });
-      })
-      .where('status', status);
+    try {
+      // Check if project_members table exists
+      const tableExists = await db.schema.hasTable('project_members');
+      
+      let query = db('projects');
+      
+      if (tableExists) {
+        query = query.where(function() {
+          this.where('ownerId', userId)
+            .orWhereExists(function() {
+              this.select('*')
+                .from('project_members')
+                .whereRaw('project_members."projectId" = projects.id')
+                .where('userId', userId)
+                .where('status', 'accepted');
+            });
+        });
+      } else {
+        // Fallback: only show owned projects if project_members table doesn't exist
+        query = query.where('ownerId', userId);
+      }
+      
+      query = query.where('status', status);
 
-    if (template) {
-      query = query.where('template', template);
+      if (template) {
+        query = query.where('template', template);
+      }
+
+      if (search) {
+        query = query.where(function() {
+          this.whereILike('name', `%${search}%`)
+            .orWhereILike('description', `%${search}%`);
+        });
+      }
+
+      const total = await query.clone().count('* as count').first();
+      const projects = await query
+        .orderBy(sortBy, sortOrder)
+        .limit(limit)
+        .offset((page - 1) * limit)
+        .select('*');
+
+      return {
+        projects,
+        total: parseInt(total?.count as string) || 0,
+      };
+    } catch (error) {
+      console.error('Error in findByUser:', error);
+      // Fallback to owned projects only if there's any database error
+      let query = db('projects')
+        .where('ownerId', userId)
+        .where('status', status);
+
+      if (template) {
+        query = query.where('template', template);
+      }
+
+      if (search) {
+        query = query.where(function() {
+          this.whereILike('name', `%${search}%`)
+            .orWhereILike('description', `%${search}%`);
+        });
+      }
+
+      const total = await query.clone().count('* as count').first();
+      const projects = await query
+        .orderBy(sortBy, sortOrder)
+        .limit(limit)
+        .offset((page - 1) * limit)
+        .select('*');
+
+      return {
+        projects,
+        total: parseInt(total?.count as string) || 0,
+      };
     }
-
-    if (search) {
-      query = query.where(function() {
-        this.whereILike('name', `%${search}%`)
-          .orWhereILike('description', `%${search}%`);
-      });
-    }
-
-    const total = await query.clone().count('* as count').first();
-    const projects = await query
-      .orderBy(sortBy, sortOrder)
-      .limit(limit)
-      .offset((page - 1) * limit)
-      .select('*');
-
-    return {
-      projects,
-      total: parseInt(total?.count as string) || 0,
-    };
   }
 
   static async updateById(id: string, data: Partial<DatabaseProject>): Promise<DatabaseProject | null> {

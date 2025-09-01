@@ -36,7 +36,43 @@ router.get('/templates', async (req: Request, res: Response) => {
   }
 });
 
-// Get template by key
+// Get full template data via POST to avoid 431 errors
+router.post('/templates/full-data', async (req: Request, res: Response) => {
+  try {
+    const { templateKey } = req.body;
+    
+    if (!templateKey) {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Template key is required',
+      });
+      return;
+    }
+    
+    const template = await TemplateService.getByKey(templateKey);
+    
+    if (!template) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Template not found',
+      });
+      return;
+    }
+    
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: template,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to fetch template';
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: message,
+    });
+  }
+});
+
+// Get template by key (deprecated - use POST /templates/full-data)
 router.get('/templates/:key', async (req: Request, res: Response) => {
   try {
     const { key } = req.params;

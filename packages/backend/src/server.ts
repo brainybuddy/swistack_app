@@ -19,6 +19,7 @@ import formatterRouter from './routes/formatter';
 import searchRouter from './routes/search';
 import autosaveRouter from './routes/autosave';
 import { invitationsRouter } from './routes/invitations';
+import agentRouter from './routes/agent';
 import { storageService } from './services/StorageService';
 import { TemplateService } from './services/TemplateService';
 import { HealthCheckService } from './services/HealthCheckService';
@@ -101,6 +102,7 @@ app.get('/', (req, res) => {
       formatter: '/api/formatter',
       search: '/api/search',
       autosave: '/api/autosave',
+      agent: '/api/agent',
     },
   });
 });
@@ -116,6 +118,7 @@ app.use('/api/formatter', formatterRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/autosave', autosaveRouter);
 app.use('/api/invitations', invitationsRouter);
+app.use('/api/agent', agentRouter);
 
 // Global error handler
 app.use((error: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -171,9 +174,9 @@ async function initializeServices() {
     await storageService.initialize();
     console.log('✅ Storage service initialized');
     
-    // Initialize default templates
-    await TemplateService.initializeDefaultTemplates();
-    console.log('✅ Project templates initialized');
+    // Initialize default templates - DISABLED to use database seed templates only
+    // await TemplateService.initializeDefaultTemplates();
+    console.log('✅ Project templates using database seeds only');
     
     // Start workspace cleanup scheduler
     GitService.startWorkspaceCleanupScheduler(6, 24); // Clean every 6 hours, max age 24 hours

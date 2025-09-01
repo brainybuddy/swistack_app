@@ -10,11 +10,20 @@ export class ProjectService {
     data: CreateProjectRequest
   ): Promise<DatabaseProject> {
     try {
-      // Get template
-      const template = await TemplateService.getByKey(data.template);
+      // Get template - use templateData from request if available to avoid 431 errors
+      let template = data.templateData;
+      
       if (!template) {
-        throw new Error('Template not found');
+        // Fallback to database lookup for backward compatibility
+        template = await TemplateService.getByKey(data.template);
+        if (!template) {
+          throw new Error('Template not found');
+        }
       }
+      
+      // DEBUG: Log what template we're creating from
+      console.log('🏗️ Creating project from template:', template.name, 'with', template.files?.length, 'files');
+      console.log('📦 Template data source:', data.templateData ? 'POST body' : 'database lookup');
 
       // Create project
       const project = await ProjectModel.create({

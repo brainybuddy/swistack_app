@@ -16,6 +16,8 @@
     "db:seed": "knex seed:run"
   },
   "dependencies": {
+    "@mistralai/mistralai": "^1.9.18",
+    "@modelcontextprotocol/sdk": "^1.17.4",
     "@swistack/shared": "*",
     "@types/nodemailer": "^7.0.1",
     "@types/passport": "^1.0.17",

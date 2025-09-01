@@ -38,7 +38,7 @@ export default function RepositoriesView() {
   const { user, httpClient } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'public' | 'private'>('all');
-  const [sortBy, setSortBy] = useState<'updated' | 'name' | 'stars'>('updated');
+  const [sortBy, setSortBy] = useState<'updatedAt' | 'name' | 'stars'>('updatedAt');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
@@ -63,7 +63,7 @@ export default function RepositoriesView() {
         page: '1',
         limit: '50',
         search: searchQuery,
-        sortBy: sortBy === 'stars' ? 'updatedAt' : sortBy, // Map to available sort options
+        sortBy: sortBy === 'stars' ? 'updatedAt' : sortBy === 'name' ? 'name' : 'updatedAt', // Map to available sort options
         sortOrder: 'desc',
       });
 
@@ -216,7 +216,7 @@ export default function RepositoriesView() {
 
   const sortedProjects = [...filteredProjects].sort((a, b) => {
     if (sortBy === 'name') return a.name.localeCompare(b.name);
-    if (sortBy === 'updated') return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    if (sortBy === 'updatedAt') return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     // Default sort
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
@@ -328,10 +328,10 @@ export default function RepositoriesView() {
             {/* Sort Dropdown */}
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'updated' | 'name' | 'stars')}
+              onChange={(e) => setSortBy(e.target.value as 'updatedAt' | 'name' | 'stars')}
               className="px-3 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-sm focus:outline-none focus:border-teal-500"
             >
-              <option value="updated">Last Updated</option>
+              <option value="updatedAt">Last Updated</option>
               <option value="name">Name</option>
               <option value="stars">Most Popular</option>
             </select>

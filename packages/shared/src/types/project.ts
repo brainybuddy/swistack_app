@@ -131,7 +131,8 @@ export interface BuildConfig {
 export interface CreateProjectRequest {
   name: string;
   description?: string;
-  template: string;
+  template: string; // Keep for backward compatibility
+  templateData?: ProjectTemplate; // Full template data to avoid 431 errors
   isPublic?: boolean;
   settings?: Partial<ProjectSettings>;
   environment?: Record<string, string>;

@@ -8,3 +8,5 @@ export * from './editor';
 export * from './virus-scan';
 export * from './invitation';
 export * from './project-update';
+export * from './autonomous-agent';
+export * from './ai';

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="logs"></div>
+
+    <script>
+        const socket = io('http://localhost:3001', {
+            auth: {
+                token: 'test-token'
+            },
+            query: {
+                projectId: 'test-project'
+            }
+        });
+
+        const log = (message) => {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.appendChild(entry);
+            console.log(message);
+        };
+
+        socket.on('connect', () => {
+            document.getElementById('status').textContent = '✅ Connected! Socket ID: ' + socket.id;
+            log('Connected to WebSocket server');
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('status').textContent = '❌ Disconnected';
+            log('Disconnected from server');
+        });
+
+        socket.on('connect_error', (error) => {
+            document.getElementById('status').textContent = '❌ Connection Error: ' + error.message;
+            log('Connection error: ' + error.message);
+        });
+
+        socket.on('project:joined', (data) => {
+            log('Joined project room: ' + data.projectId);
+        });
+
+        // Listen for AI events
+        socket.on('ai:thinking', () => log('AI is thinking...'));
+        socket.on('ai:actionStarted', (data) => log('Action started: ' + JSON.stringify(data)));
+        socket.on('ai:actionCompleted', (data) => log('Action completed: ' + JSON.stringify(data)));
+        socket.on('ai:actionFailed', (data) => log('Action failed: ' + JSON.stringify(data)));
+        socket.on('ai:progress', (data) => log('Progress: ' + JSON.stringify(data)));
+        socket.on('ai:output', (data) => log('Output: ' + data.output));
+        socket.on('file:changed', (data) => log('File changed: ' + data.filePath));
+        socket.on('terminal:output', (data) => log('Terminal: ' + data.data));
+
+        // Listen for any event
+        socket.onAny((event, ...args) => {
+            log(`Event: ${event} - ${JSON.stringify(args)}`);
+        });
+    </script>
+</body>
+</html>

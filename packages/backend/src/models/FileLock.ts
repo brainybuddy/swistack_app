@@ -183,10 +183,10 @@ export class FileLock extends Model {
   // Cleanup expired locks
   static async cleanupExpiredLocks() {
     return await this.query()
-      .where('isActive', true)
-      .whereNotNull('expiresAt')
-      .where('expiresAt', '<', new Date())
-      .patch({ isActive: false });
+      .where('is_active', true)
+      .whereNotNull('expires_at')
+      .where('expires_at', '<', new Date())
+      .patch({ is_active: false });
   }
 
   // Auto-extend lock expiration

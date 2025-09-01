@@ -30,14 +30,7 @@ export const projectSettingsSchema = z.object({
   }).optional(),
 });
 
-export const createProjectSchema = z.object({
-  name: z.string().min(1, 'Project name is required').max(100, 'Project name too long'),
-  description: z.string().max(500, 'Description too long').optional(),
-  template: z.string().min(1, 'Template is required'),
-  isPublic: z.boolean().optional(),
-  settings: projectSettingsSchema.optional(),
-  environment: z.record(z.string()).optional(),
-});
+// Moved createProjectSchema after templateSchema definition
 
 export const updateProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(100, 'Project name too long').optional(),
@@ -88,6 +81,36 @@ export const templateFileSchema = z.object({
   type: z.enum(['file', 'directory']),
   encoding: z.string().optional(),
   isBinary: z.boolean().optional(),
+});
+
+// Template schema for project creation
+const templateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  key: z.string(),
+  description: z.string().optional(),
+  category: z.string(),
+  language: z.string(),
+  framework: z.string().optional(),
+  dependencies: z.record(z.string()),
+  scripts: z.record(z.string()),
+  config: z.record(z.any()),
+  dockerImage: z.string().optional(),
+  files: z.array(templateFileSchema),
+  icon: z.string().optional(),
+  version: z.string().optional(),
+  isActive: z.boolean().optional(),
+  isOfficial: z.boolean().optional(),
+});
+
+export const createProjectSchema = z.object({
+  name: z.string().min(1, 'Project name is required').max(100, 'Project name too long'),
+  description: z.string().max(500, 'Description too long').optional(),
+  template: z.string().min(1, 'Template is required'),
+  templateData: templateSchema.optional(), // Full template data to avoid 431 errors
+  isPublic: z.boolean().optional(),
+  settings: projectSettingsSchema.optional(),
+  environment: z.record(z.string()).optional(),
 });
 
 export const createTemplateSchema = z.object({

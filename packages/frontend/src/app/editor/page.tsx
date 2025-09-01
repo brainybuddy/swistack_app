@@ -43,7 +43,7 @@ import {
   MoreHorizontal,
   ToggleLeft,
   Hash,
-  Map,
+  Map as MapIcon,
   Users,
   Bell,
   PanelRightClose,
@@ -81,7 +81,7 @@ interface Tab {
 export default function EditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, httpClient } = useAuth();
   const [template, setTemplate] = useState<any>(null);
   
   // Tools state
@@ -92,13 +92,13 @@ export default function EditorPage() {
   ]);
   const [activeRightTab, setActiveRightTab] = useState<string>('preview');
   
-  // Editor state - Start with App.js open to show the React code
+  // Editor state - Start with page.tsx open to show the E-Learning homepage
   const [openTabs, setOpenTabs] = useState<Tab[]>([
-    { id: 'src/App.js', name: 'App.js', type: 'file', icon: Code2 },
+    { id: 'src/app/page.tsx', name: 'page.tsx', type: 'file', icon: Code2 },
     { id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }
   ]);
-  const [activeTab, setActiveTab] = useState<string>('src/App.js');
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['src']));
+  const [activeTab, setActiveTab] = useState<string>('src/app/page.tsx');
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['src', 'src/app']));
   
   // Chat state
   const [messages, setMessages] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]);
@@ -156,668 +156,43 @@ export default function EditorPage() {
     return null;
   };
 
-  const [fileTree] = useState<FileNode[]>([
-    {
-      name: 'public',
-      type: 'folder',
-      children: [
-        { 
-          name: 'index.html', 
-          type: 'file', 
-          content: `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="React App created with SwiStack" />
-    <title>React App</title>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-  </body>
-</html>`, 
-          language: 'html' 
-        }
-      ]
-    },
-    {
-      name: 'src',
-      type: 'folder',
-      children: [
-        { 
-          name: 'index.js', 
-          type: 'file', 
-          content: `import React from 'react';
-import ReactDOM from 'react-dom/client';
-import './index.css';
-import App from './App';
+  const [fileTree, setFileTree] = useState<FileNode[]>([]);
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);`, 
-          language: 'javascript' 
-        },
-        { 
-          name: 'App.js', 
-          type: 'file', 
-          content: `import React, { useState } from 'react';
-import './App.css';
-import Header from './components/Header';
-import TodoList from './components/TodoList';
-import Footer from './components/Footer';
-
-function App() {
-  const [todos, setTodos] = useState([
-    { id: 1, text: 'Learn React', completed: false },
-    { id: 2, text: 'Build awesome apps', completed: false },
-    { id: 3, text: 'Deploy to production', completed: false }
-  ]);
-
-  const addTodo = (text) => {
-    const newTodo = {
-      id: Date.now(),
-      text,
-      completed: false
-    };
-    setTodos([...todos, newTodo]);
-  };
-
-  const toggleTodo = (id) => {
-    setTodos(todos.map(todo =>
-      todo.id === id ? { ...todo, completed: !todo.completed } : todo
-    ));
-  };
-
-  const deleteTodo = (id) => {
-    setTodos(todos.filter(todo => todo.id !== id));
-  };
-
-  return (
-    <div className="App">
-      <Header />
-      <main className="main-content">
-        <TodoList 
-          todos={todos} 
-          onAddTodo={addTodo}
-          onToggleTodo={toggleTodo}
-          onDeleteTodo={deleteTodo}
-        />
-      </main>
-      <Footer />
-    </div>
-  );
-}
-
-export default App;`, 
-          language: 'javascript' 
-        },
-        { 
-          name: 'App.css', 
-          type: 'file', 
-          content: `.App {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.main-content {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 2rem;
-}
-
-@media (max-width: 768px) {
-  .main-content {
-    padding: 1rem;
-  }
-}`, 
-          language: 'css' 
-        },
-        { 
-          name: 'index.css', 
-          type: 'file', 
-          content: `* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  color: #333;
-  background-color: #f5f5f5;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
-}`, 
-          language: 'css' 
-        },
-        {
-          name: 'components',
-          type: 'folder',
-          children: [
-            { 
-              name: 'Header.js', 
-              type: 'file', 
-              content: `import React from 'react';
-import './Header.css';
-
-function Header() {
-  return (
-    <header className="header">
-      <div className="container">
-        <h1 className="logo">
-          <span className="logo-icon">⚡</span>
-          React Todo App
-        </h1>
-        <p className="subtitle">Built with SwiStack</p>
-      </div>
-    </header>
-  );
-}
-
-export default Header;`, 
-              language: 'javascript' 
-            },
-            { 
-              name: 'Header.css', 
-              type: 'file', 
-              content: `.header {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 1rem 0;
-  color: white;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 2rem;
-  text-align: center;
-}
-
-.logo {
-  font-size: 2.5rem;
-  font-weight: bold;
-  margin-bottom: 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-.logo-icon {
-  font-size: 3rem;
-}
-
-.subtitle {
-  font-size: 1.1rem;
-  opacity: 0.9;
-}
-
-@media (max-width: 768px) {
-  .logo {
-    font-size: 2rem;
-  }
-  
-  .logo-icon {
-    font-size: 2.5rem;
-  }
-  
-  .container {
-    padding: 0 1rem;
-  }
-}`, 
-              language: 'css' 
-            },
-            { 
-              name: 'TodoList.js', 
-              type: 'file', 
-              content: `import React, { useState } from 'react';
-import TodoItem from './TodoItem';
-import './TodoList.css';
-
-function TodoList({ todos, onAddTodo, onToggleTodo, onDeleteTodo }) {
-  const [newTodo, setNewTodo] = useState('');
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (newTodo.trim()) {
-      onAddTodo(newTodo.trim());
-      setNewTodo('');
-    }
-  };
-
-  return (
-    <div className="todo-list">
-      <div className="todo-header">
-        <h2>My Tasks</h2>
-        <p>{todos.filter(todo => !todo.completed).length} remaining</p>
-      </div>
+  // Function to fetch full template data via POST to avoid 431 errors
+  const fetchTemplateData = async (templateKey: string) => {
+    try {
+      console.log('🔍 Fetching template data for key:', templateKey);
+      const response = await httpClient.post('/api/projects/templates/full-data', {
+        templateKey: templateKey
+      });
       
-      <form onSubmit={handleSubmit} className="todo-form">
-        <input
-          type="text"
-          value={newTodo}
-          onChange={(e) => setNewTodo(e.target.value)}
-          placeholder="Add a new task..."
-          className="todo-input"
-        />
-        <button type="submit" className="add-button">
-          Add Task
-        </button>
-      </form>
-
-      <div className="todos">
-        {todos.length === 0 ? (
-          <p className="empty-state">No tasks yet. Add one above!</p>
-        ) : (
-          todos.map(todo => (
-            <TodoItem
-              key={todo.id}
-              todo={todo}
-              onToggle={onToggleTodo}
-              onDelete={onDeleteTodo}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-export default TodoList;`, 
-              language: 'javascript' 
-            },
-            { 
-              name: 'TodoList.css', 
-              type: 'file', 
-              content: `.todo-list {
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-  max-width: 600px;
-  width: 100%;
-}
-
-.todo-header {
-  text-align: center;
-  margin-bottom: 2rem;
-}
-
-.todo-header h2 {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-  color: #333;
-}
-
-.todo-header p {
-  color: #666;
-  font-size: 1rem;
-}
-
-.todo-form {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-.todo-input {
-  flex: 1;
-  padding: 1rem;
-  border: 2px solid #e1e5e9;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: border-color 0.3s ease;
-}
-
-.todo-input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.add-button {
-  padding: 1rem 2rem;
-  background: linear-gradient(45deg, #667eea, #764ba2);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-}
-
-.add-button:hover {
-  transform: translateY(-2px);
-}
-
-.todos {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.empty-state {
-  text-align: center;
-  color: #999;
-  font-style: italic;
-  padding: 2rem;
-}
-
-@media (max-width: 768px) {
-  .todo-list {
-    padding: 1.5rem;
-  }
-  
-  .todo-form {
-    flex-direction: column;
-  }
-  
-  .todo-header h2 {
-    font-size: 1.5rem;
-  }
-}`, 
-              language: 'css' 
-            },
-            { 
-              name: 'TodoItem.js', 
-              type: 'file', 
-              content: `import React from 'react';
-import './TodoItem.css';
-
-function TodoItem({ todo, onToggle, onDelete }) {
-  return (
-    <div className={\`todo-item \${todo.completed ? 'completed' : ''}\`}>
-      <div className="todo-content">
-        <button
-          className="toggle-button"
-          onClick={() => onToggle(todo.id)}
-        >
-          {todo.completed ? '✓' : '○'}
-        </button>
-        <span className="todo-text">{todo.text}</span>
-      </div>
-      <button
-        className="delete-button"
-        onClick={() => onDelete(todo.id)}
-      >
-        ×
-      </button>
-    </div>
-  );
-}
-
-export default TodoItem;`, 
-              language: 'javascript' 
-            },
-            { 
-              name: 'TodoItem.css', 
-              type: 'file', 
-              content: `.todo-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  background: #f8f9fa;
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-.todo-item:hover {
-  background: #e9ecef;
-}
-
-.todo-item.completed {
-  opacity: 0.7;
-  background: #d4edda;
-}
-
-.todo-content {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex: 1;
-}
-
-.toggle-button {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 50%;
-  border: 2px solid #667eea;
-  background: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 1rem;
-  color: #667eea;
-  transition: all 0.3s ease;
-}
-
-.todo-item.completed .toggle-button {
-  background: #667eea;
-  color: white;
-}
-
-.todo-text {
-  font-size: 1rem;
-  color: #333;
-  transition: all 0.3s ease;
-}
-
-.todo-item.completed .todo-text {
-  text-decoration: line-through;
-  color: #666;
-}
-
-.delete-button {
-  width: 2rem;
-  height: 2rem;
-  border: none;
-  background: #dc3545;
-  color: white;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 1.2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.3s ease;
-}
-
-.delete-button:hover {
-  background: #c82333;
-}`, 
-              language: 'css' 
-            },
-            { 
-              name: 'Footer.js', 
-              type: 'file', 
-              content: `import React from 'react';
-import './Footer.css';
-
-function Footer() {
-  return (
-    <footer className="footer">
-      <div className="container">
-        <p>&copy; 2024 React Todo App. Built with ❤️ using SwiStack.</p>
-        <div className="footer-links">
-          <a href="#" className="footer-link">About</a>
-          <a href="#" className="footer-link">Contact</a>
-          <a href="#" className="footer-link">GitHub</a>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-export default Footer;`, 
-              language: 'javascript' 
-            },
-            { 
-              name: 'Footer.css', 
-              type: 'file', 
-              content: `.footer {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
-  padding: 2rem 0;
-  margin-top: auto;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 2rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.footer-links {
-  display: flex;
-  gap: 2rem;
-}
-
-.footer-link {
-  color: white;
-  text-decoration: none;
-  opacity: 0.8;
-  transition: opacity 0.3s ease;
-}
-
-.footer-link:hover {
-  opacity: 1;
-}
-
-@media (max-width: 768px) {
-  .container {
-    flex-direction: column;
-    gap: 1rem;
-    text-align: center;
-    padding: 0 1rem;
-  }
-  
-  .footer-links {
-    gap: 1.5rem;
-  }
-}`, 
-              language: 'css' 
-            }
-          ]
-        }
-      ]
-    },
-    { 
-      name: 'package.json', 
-      type: 'file', 
-      content: `{
-  "name": "react-todo-app",
-  "version": "0.1.0",
-  "private": true,
-  "dependencies": {
-    "@testing-library/jest-dom": "^5.16.4",
-    "@testing-library/react": "^13.3.0",
-    "@testing-library/user-event": "^13.5.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4"
-  },
-  "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
-  }
-}`, 
-      language: 'json' 
-    },
-    { 
-      name: 'README.md', 
-      type: 'file', 
-      content: `# React Todo App
-
-A beautiful, responsive todo application built with React and SwiStack.
-
-## Features
-
-- ✅ Add, toggle, and delete tasks
-- 🎨 Beautiful gradient design
-- 📱 Fully responsive
-- ⚡ Fast and lightweight
-- 🔥 Hot reload development
-
-## Getting Started
-
-1. Install dependencies:
-   \`\`\`bash
-   npm install
-   \`\`\`
-
-2. Start the development server:
-   \`\`\`bash
-   npm start
-   \`\`\`
-
-3. Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
-
-## Available Scripts
-
-- \`npm start\` - Runs the app in development mode
-- \`npm test\` - Launches the test runner
-- \`npm run build\` - Builds the app for production
-- \`npm run eject\` - Ejects from Create React App
-
-## Built With
-
-- [React](https://reactjs.org/) - The web framework used
-- [SwiStack](https://swistack.com) - The development platform
-- CSS3 - For styling and animations
-
-## License
-
-This project is licensed under the MIT License.
-`, 
-      language: 'markdown' 
+      if (response.success && response.data) {
+        console.log('✅ Received template data:', response.data.name);
+        setTemplate(response.data);
+        setMessages([
+          { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
+        ]);
+      } else {
+        console.error('❌ Failed to fetch template data:', response.error);
+        // Fall back to basic template
+        setTemplate({ 
+          name: 'New Project', 
+          language: 'TypeScript', 
+          description: 'A new project',
+          key: templateKey 
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error fetching template data:', error);
+      // Fall back to basic template
+      setTemplate({ 
+        name: 'New Project', 
+        language: 'TypeScript', 
+        description: 'A new project',
+        key: templateKey 
+      });
     }
-  ]);
+  };
 
   useEffect(() => {
     // Check for project data (from AI creation) first
@@ -848,29 +223,100 @@ This project is licensed under the MIT License.
         ]);
       }
     } else {
-      // Fall back to template data
-      const templateData = searchParams.get('template');
-      if (templateData) {
-        try {
-          const parsedTemplate = JSON.parse(decodeURIComponent(templateData));
-          setTemplate(parsedTemplate);
-          setMessages([
-            { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-          ]);
-        } catch (e) {
-          setTemplate({ name: 'New Project', language: 'JavaScript', description: 'A new project' });
+      // Handle template key - fetch full template data via POST to avoid 431 errors
+      const templateKey = searchParams.get('templateKey');
+      if (templateKey) {
+        fetchTemplateData(templateKey);
+      } else {
+        // Fall back to legacy template data (deprecated)
+        const templateData = searchParams.get('template');
+        if (templateData) {
+          try {
+            const parsedTemplate = JSON.parse(decodeURIComponent(templateData));
+            setTemplate(parsedTemplate);
+            setMessages([
+              { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
+            ]);
+          } catch (e) {
+            console.error('Template parsing error:', e);
+            setTemplate({ name: 'Default Template', language: 'TypeScript', description: 'Project template' });
+            setMessages([
+              { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
+            ]);
+          }
+        } else {
+          setTemplate({ name: 'Default Template', language: 'TypeScript', description: 'Project template' });
           setMessages([
             { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
           ]);
         }
-      } else {
-        setTemplate({ name: 'New Project', language: 'JavaScript', description: 'A new project' });
-        setMessages([
-          { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-        ]);
       }
     }
   }, [searchParams]);
+
+  // Convert template files to fileTree structure
+  useEffect(() => {
+    console.log('Template conversion useEffect triggered:', { template, hasFiles: template?.files, isArray: Array.isArray(template?.files) });
+    if (template && template.files && Array.isArray(template.files)) {
+      const convertTemplateToFileTree = (templateFiles: any[]): FileNode[] => {
+        const buildTree = (files: any[]): FileNode[] => {
+          const pathMap = new Map<string, FileNode>();
+          const rootNodes: FileNode[] = [];
+
+          // First pass: create all nodes
+          files.forEach((file) => {
+            const parts = file.path.split('/');
+            let currentPath = '';
+            
+            parts.forEach((part, index) => {
+              const previousPath = currentPath;
+              currentPath = currentPath ? `${currentPath}/${part}` : part;
+              
+              if (!pathMap.has(currentPath)) {
+                const isFile = index === parts.length - 1 && file.type === 'file';
+                const node: FileNode = {
+                  name: part,
+                  type: isFile ? 'file' : 'folder',
+                  language: isFile ? (file.path.endsWith('.tsx') ? 'typescript' : file.path.endsWith('.js') ? 'javascript' : file.path.endsWith('.css') ? 'css' : 'text') : undefined,
+                  content: isFile ? file.content : undefined,
+                  children: isFile ? undefined : []
+                };
+                pathMap.set(currentPath, node);
+                
+                if (previousPath) {
+                  const parent = pathMap.get(previousPath);
+                  if (parent && parent.children) {
+                    parent.children.push(node);
+                  }
+                } else {
+                  rootNodes.push(node);
+                }
+              }
+            });
+          });
+
+          return rootNodes;
+        };
+
+        return buildTree(templateFiles);
+      };
+
+      const templateFiles = template.files || [];
+      const newFileTree = convertTemplateToFileTree(templateFiles);
+      setFileTree(newFileTree);
+      
+      // Set the first file as active if available
+      const firstFile = templateFiles.find((f: any) => f.type === 'file');
+      if (firstFile) {
+        const fileId = firstFile.path;
+        setOpenTabs([
+          { id: fileId, name: firstFile.path.split('/').pop() || 'file', type: 'file', icon: Code2 },
+          { id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }
+        ]);
+        setActiveTab(fileId);
+      }
+    }
+  }, [template]);
 
   // Initialize editor with first file content
   useEffect(() => {
@@ -1582,7 +1028,7 @@ This project is licensed under the MIT License.
                         }`}
                         title="Toggle minimap"
                       >
-                        <Map className="w-3 h-3" />
+                        <MapIcon className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
@@ -1925,7 +1371,7 @@ This project is licensed under the MIT License.
                   
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <Map className="w-4 h-4 text-gray-400" />
+                      <MapIcon className="w-4 h-4 text-gray-400" />
                       <span className="text-sm text-gray-300">Minimap</span>
                     </div>
                     <button

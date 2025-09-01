@@ -139,10 +139,25 @@ export default function TemplatesView({ onSelectTemplate }: TemplatesViewProps) 
     try {
       setIsLoading(true);
       
+      // First, get the full template data via POST to avoid 431 errors
+      console.log('🔍 Fetching full template data for:', template.key);
+      const fullTemplateResponse = await httpClient.post('/api/projects/templates/full-data', {
+        templateKey: template.key
+      });
+      
+      if (!fullTemplateResponse.success || !fullTemplateResponse.data) {
+        throw new Error(fullTemplateResponse.error || 'Failed to fetch template data');
+      }
+      
+      const fullTemplate = fullTemplateResponse.data;
+      console.log('✅ Got full template data:', fullTemplate.name, 'with', fullTemplate.files?.length, 'files');
+      
+      // Now create the project with full template data
       const createRequest: CreateProjectRequest = {
         name: `My ${template.name} Project`,
         description: template.description || '',
         template: template.key,
+        templateData: fullTemplate, // Send full template data to avoid 431 errors
         isPublic: false
       };
 

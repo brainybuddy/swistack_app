@@ -1,0 +1,199 @@
+{
+  "name": "E-Learning Platform",
+  "id": "elearning-fullstack",
+  "version": "1.0.0",
+  "description": "A comprehensive e-learning platform with course management, video streaming, progress tracking, and payment processing",
+  "author": "SwiStack",
+  "category": "Education",
+  "tags": ["elearning", "education", "courses", "video-streaming", "fullstack", "postgresql", "nextjs", "nodejs"],
+  "difficulty": "advanced",
+  "estimatedTime": "2-4 hours to customize",
+  "
+": "https://raw.githubusercontent.com/swistack/templates/main/elearning-fullstack/thumbnail.jpg",
+  "features": [
+    "🎓 Complete Learning Management System (LMS)",
+    "👨‍🎓 Student dashboard with progress tracking",
+    "👨‍🏫 Instructor panel for course creation",
+    "🏢 Admin panel for platform management",
+    "📹 Video streaming with HLS support",
+    "📝 Quiz and assignment system",
+    "💳 Payment integration (Stripe)",
+    "📊 Advanced analytics and reporting",
+    "💬 Discussion forums and messaging",
+    "🏆 Certificates and achievements",
+    "📱 Responsive design for all devices",
+    "🌙 Dark/light mode support",
+    "🔒 JWT authentication with role-based access",
+    "🔄 Real-time notifications with Socket.IO",
+    "📈 Progress tracking and learning analytics"
+  ],
+  "techStack": {
+    "frontend": {
+      "framework": "Next.js 14",
+      "language": "TypeScript",
+      "styling": "Tailwind CSS + shadcn/ui",
+      "stateManagement": "Zustand + React Query",
+      "authentication": "JWT with refresh tokens"
+    },
+    "backend": {
+      "runtime": "Node.js",
+      "framework": "Express.js",
+      "language": "TypeScript",
+      "database": "PostgreSQL",
+      "orm": "Objection.js + Knex",
+      "cache": "Redis",
+      "realtime": "Socket.IO"
+    },
+    "services": {
+      "fileStorage": "AWS S3 / MinIO",
+      "emailService": "Nodemailer",
+      "paymentProcessor": "Stripe",
+      "videoProcessing": "FFmpeg",
+      "backgroundJobs": "Node-cron"
+    }
+  },
+  "structure": {
+    "backend": {
+      "type": "nodejs-express",
+      "path": "./backend",
+      "main": "src/server.ts",
+      "database": {
+        "type": "postgresql",
+        "schema": "./database/schema.sql",
+        "migrations": "./backend/src/migrations",
+        "seeds": "./backend/src/seeds"
+      },
+      "environment": {
+        "required": [
+          "DATABASE_URL",
+          "JWT_SECRET",
+          "JWT_REFRESH_SECRET",
+          "REDIS_URL"
+        ],
+        "optional": [
+          "STRIPE_SECRET_KEY",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_SECRET_ACCESS_KEY",
+          "SMTP_HOST",
+          "SMTP_USER",
+          "SMTP_PASS"
+        ]
+      }
+    },
+    "frontend": {
+      "type": "nextjs",
+      "path": "./frontend",
+      "main": "src/app/page.tsx",
+      "environment": {
+        "required": [
+          "NEXT_PUBLIC_API_URL"
+        ],
+        "optional": [
+          "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+          "NEXT_PUBLIC_GOOGLE_ANALYTICS_ID",
+          "NEXT_PUBLIC_WS_URL"
+        ]
+      }
+    }
+  },
+  "deployment": {
+    "docker": {
+      "compose": "./docker-compose.yml",
+      "services": ["backend", "frontend", "postgres", "redis"]
+    },
+    "vercel": {
+      "frontend": true,
+      "backend": false
+    },
+    "railway": {
+      "fullstack": true
+    },
+    "aws": {
+      "ecs": true,
+      "lambda": false
+    }
+  },
+  "setup": {
+    "steps": [
+      {
+        "title": "Install Dependencies",
+        "commands": [
+          "cd backend && npm install",
+          "cd frontend && npm install"
+        ]
+      },
+      {
+        "title": "Setup Environment Variables",
+        "description": "Copy .env.example files and configure your environment variables",
+        "commands": [
+          "cp backend/.env.example backend/.env",
+          "cp frontend/.env.example frontend/.env"
+        ],
+        "notes": [
+          "Configure PostgreSQL connection in backend/.env",
+          "Set JWT secrets for authentication",
+          "Configure Redis URL for caching",
+          "Optional: Set up Stripe for payments",
+          "Optional: Configure AWS S3 for file storage"
+        ]
+      },
+      {
+        "title": "Setup Database",
+        "commands": [
+          "cd backend && npm run db:migrate",
+          "cd backend && npm run db:seed"
+        ],
+        "notes": [
+          "This will create all necessary tables and relationships",
+          "Seed data includes sample categories and admin user"
+        ]
+      },
+      {
+        "title": "Start Development Servers",
+        "commands": [
+          "cd backend && npm run dev",
+          "cd frontend && npm run dev"
+        ],
+        "ports": {
+          "backend": 3001,
+          "frontend": 3000
+        }
+      }
+    ]
+  },
+  "customization": {
+    "branding": {
+      "logo": "./frontend/public/logo.png",
+      "favicon": "./frontend/public/favicon.ico",
+      "colors": "./frontend/src/styles/globals.css",
+      "theme": "./frontend/tailwind.config.js"
+    },
+    "content": {
+      "homepage": "./frontend/src/app/page.tsx",
+      "aboutPage": "./frontend/src/app/about/page.tsx",
+      "emailTemplates": "./backend/src/templates/emails"
+    },
+    "features": {
+      "paymentGateway": "Configure in backend/src/services/paymentService.ts",
+      "emailProvider": "Configure in backend/src/services/emailService.ts",
+      "videoStreaming": "Configure in backend/src/services/videoService.ts",
+      "analytics": "Configure in frontend/src/lib/analytics.ts"
+    }
+  },
+  "documentation": {
+    "readme": "./README.md",
+    "apiDocs": "Auto-generated with OpenAPI/Swagger",
+    "componentDocs": "Storybook documentation",
+    "deployment": "./docs/deployment.md",
+    "customization": "./docs/customization.md"
+  },
+  "support": {
+    "community": "https://github.com/swistack/templates/discussions",
+    "issues": "https://github.com/swistack/templates/issues",
+    "documentation": "https://docs.swistack.com/templates/elearning",
+    "examples": "https://elearning-demo.swistack.com"
+  },
+  "license": "MIT",
+  "createdAt": "2024-01-01T00:00:00Z",
+  "updatedAt": "2024-01-01T00:00:00Z"
+}

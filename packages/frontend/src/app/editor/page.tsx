@@ -120,7 +120,7 @@ export default function EditorPage() {
   
   // Pane sizes - force new default widths
   const [leftPaneWidth, setLeftPaneWidth] = useState(199);
-  const [rightPaneWidth, setRightPaneWidth] = useState(436);
+  const [rightPaneWidth, setRightPaneWidth] = useState(799);
   
   const [isDraggingLeft, setIsDraggingLeft] = useState(false);
   const [isDraggingRight, setIsDraggingRight] = useState(false);

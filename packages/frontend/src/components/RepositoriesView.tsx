@@ -125,6 +125,10 @@ export default function RepositoriesView() {
   };
 
   const formatFileSize = (bytes: number): string => {
+    if (typeof bytes !== 'number' || isNaN(bytes)) {
+      return '0 B';
+    }
+    
     const units = ['B', 'KB', 'MB', 'GB'];
     let size = bytes;
     let unitIndex = 0;

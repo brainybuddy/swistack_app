@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import SaveTemplateAsProjectModal from '@/components/SaveTemplateAsProjectModal';
 import Editor from '@monaco-editor/react';
 import { 
   ArrowLeft, 
@@ -84,6 +85,11 @@ export default function EditorPage() {
   const { user, httpClient } = useAuth();
   const [template, setTemplate] = useState<any>(null);
   
+  // Template restriction state
+  const [isTemplate, setIsTemplate] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [restrictedFeatureRequested, setRestrictedFeatureRequested] = useState<string | null>(null);
+  
   // Tools state
   const [activeLeftTool, setActiveLeftTool] = useState<'files' | 'search' | 'git' | 'collaboration' | 'extensions'>('files');
   const [rightPaneTabs, setRightPaneTabs] = useState<Array<{id: string, label: string, icon: any}>>([
@@ -92,12 +98,11 @@ export default function EditorPage() {
   ]);
   const [activeRightTab, setActiveRightTab] = useState<string>('preview');
   
-  // Editor state - Start with page.tsx open to show the E-Learning homepage
+  // Editor state - Start with AI Assistant for templates, file for projects
   const [openTabs, setOpenTabs] = useState<Tab[]>([
-    { id: 'src/app/page.tsx', name: 'page.tsx', type: 'file', icon: Code2 },
     { id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }
   ]);
-  const [activeTab, setActiveTab] = useState<string>('src/app/page.tsx');
+  const [activeTab, setActiveTab] = useState<string>('ai-chat');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['src', 'src/app']));
   
   // Chat state
@@ -176,9 +181,9 @@ export default function EditorPage() {
         console.error('❌ Failed to fetch template data:', response.error);
         // Fall back to basic template
         setTemplate({ 
-          name: 'New Project', 
+          name: 'Template Project', 
           language: 'TypeScript', 
-          description: 'A new project',
+          description: 'A template project',
           key: templateKey 
         });
       }
@@ -186,9 +191,9 @@ export default function EditorPage() {
       console.error('❌ Error fetching template data:', error);
       // Fall back to basic template
       setTemplate({ 
-        name: 'New Project', 
+        name: 'Template Project', 
         language: 'TypeScript', 
-        description: 'A new project',
+        description: 'A template project',
         key: templateKey 
       });
     }
@@ -201,6 +206,7 @@ export default function EditorPage() {
       try {
         const project = JSON.parse(decodeURIComponent(projectData));
         setTemplate(project);
+        setIsTemplate(false); // This is a project, not a template
         
         // Set AI-specific welcome message
         if (project.createdBy === 'ai') {
@@ -226,6 +232,7 @@ export default function EditorPage() {
       // Handle template key - fetch full template data via POST to avoid 431 errors
       const templateKey = searchParams.get('templateKey');
       if (templateKey) {
+        setIsTemplate(true); // This is a template
         fetchTemplateData(templateKey);
       } else {
         // Fall back to legacy template data (deprecated)
@@ -234,18 +241,21 @@ export default function EditorPage() {
           try {
             const parsedTemplate = JSON.parse(decodeURIComponent(templateData));
             setTemplate(parsedTemplate);
+            setIsTemplate(true); // This is a template
             setMessages([
               { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
             ]);
           } catch (e) {
             console.error('Template parsing error:', e);
             setTemplate({ name: 'Default Template', language: 'TypeScript', description: 'Project template' });
+            setIsTemplate(true);
             setMessages([
               { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
             ]);
           }
         } else {
           setTemplate({ name: 'Default Template', language: 'TypeScript', description: 'Project template' });
+          setIsTemplate(true);
           setMessages([
             { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
           ]);
@@ -305,18 +315,25 @@ export default function EditorPage() {
       const newFileTree = convertTemplateToFileTree(templateFiles);
       setFileTree(newFileTree);
       
-      // Set the first file as active if available
+      // For templates, start with AI Assistant tab active
+      // For projects, set the first file as active if available
       const firstFile = templateFiles.find((f: any) => f.type === 'file');
       if (firstFile) {
-        const fileId = firstFile.path;
         setOpenTabs([
-          { id: fileId, name: firstFile.path.split('/').pop() || 'file', type: 'file', icon: Code2 },
+          { id: firstFile.path, name: firstFile.path.split('/').pop() || 'file', type: 'file', icon: Code2 },
           { id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }
         ]);
-        setActiveTab(fileId);
+        // If it's a template, default to AI Assistant tab, otherwise open the first file
+        setActiveTab(isTemplate ? 'ai-chat' : firstFile.path);
+      } else {
+        // No files available, just show AI Assistant
+        setOpenTabs([
+          { id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }
+        ]);
+        setActiveTab('ai-chat');
       }
     }
-  }, [template]);
+  }, [template, isTemplate]);
 
   // Initialize editor with first file content
   useEffect(() => {
@@ -459,6 +476,46 @@ export default function EditorPage() {
       }]);
     }, 1000);
     setInputMessage('');
+  };
+
+  // Template restriction functions
+  const checkTemplateRestriction = (featureName: string): boolean => {
+    if (isTemplate) {
+      setRestrictedFeatureRequested(featureName);
+      setShowSaveModal(true);
+      return false;
+    }
+    return true;
+  };
+
+  const handleSaveAsProject = async (projectName: string) => {
+    try {
+      const response = await httpClient.post('/api/projects', {
+        name: projectName,
+        description: template?.description || 'Project created from template',
+        template: template?.key || template?.slug || 'custom',
+        isPublic: false,
+        files: template?.files || []
+      });
+
+      if (response.success && response.data) {
+        setIsTemplate(false);
+        setShowSaveModal(false);
+        setRestrictedFeatureRequested(null);
+        
+        // Update the URL to reflect this is now a project
+        const newUrl = `/editor?project=${encodeURIComponent(JSON.stringify(response.data))}`;
+        window.history.replaceState({}, '', newUrl);
+        
+        // Show success message
+        alert(`Project "${projectName}" created successfully!`);
+      } else {
+        throw new Error(response.error || 'Failed to create project');
+      }
+    } catch (error) {
+      console.error('Error creating project:', error);
+      throw error;
+    }
   };
 
   const createNewFile = () => {
@@ -621,6 +678,12 @@ export default function EditorPage() {
             <div className="flex items-center space-x-2">
               <Code2 className="w-4 h-4 text-teal-400" />
               <span className="text-sm font-medium">{template?.name || 'Untitled'}</span>
+              {isTemplate && (
+                <span className="text-xs px-2 py-0.5 bg-orange-600/20 border border-orange-600/30 rounded text-orange-400 flex items-center space-x-1">
+                  <FileText className="w-3 h-3" />
+                  <span>Template</span>
+                </span>
+              )}
               {template?.createdBy === 'ai' && (
                 <span className="text-xs px-2 py-0.5 bg-purple-600/20 border border-purple-600/30 rounded text-purple-400 flex items-center space-x-1">
                   <Sparkles className="w-3 h-3" />
@@ -631,18 +694,30 @@ export default function EditorPage() {
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-1 text-xs text-gray-400">
-              <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-              <span>Saved</span>
-            </div>
-            <button className="px-3 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded transition-colors">
-              <Save className="w-3 h-3 inline mr-1" />
-              Save All
-            </button>
-            <button className="px-3 py-1 text-xs bg-teal-600 hover:bg-teal-700 rounded transition-colors">
-              <Play className="w-3 h-3 inline mr-1" />
-              Run
-            </button>
+            {isTemplate ? (
+              <button 
+                onClick={() => setShowSaveModal(true)}
+                className="px-3 py-1 text-xs bg-orange-600 hover:bg-orange-700 rounded transition-colors flex items-center space-x-1"
+              >
+                <Save className="w-3 h-3" />
+                <span>Save as Project</span>
+              </button>
+            ) : (
+              <>
+                <div className="flex items-center space-x-1 text-xs text-gray-400">
+                  <span className="w-2 h-2 bg-green-400 rounded-full"></span>
+                  <span>Saved</span>
+                </div>
+                <button className="px-3 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded transition-colors">
+                  <Save className="w-3 h-3 inline mr-1" />
+                  Save All
+                </button>
+                <button className="px-3 py-1 text-xs bg-teal-600 hover:bg-teal-700 rounded transition-colors">
+                  <Play className="w-3 h-3 inline mr-1" />
+                  Run
+                </button>
+              </>
+            )}
             <div className="flex items-center space-x-1">
               {/* Panel Toggle Controls */}
               <button 
@@ -677,11 +752,18 @@ export default function EditorPage() {
                 <Settings className="w-4 h-4" />
               </button>
               <button 
-                onClick={() => setShowBottomPanel(!showBottomPanel)}
+                onClick={() => {
+                  if (!checkTemplateRestriction('Terminal')) {
+                    return;
+                  }
+                  setShowBottomPanel(!showBottomPanel);
+                }}
                 className={`p-2 rounded transition-colors ${
                   showBottomPanel ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                } ${
+                  isTemplate ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
-                title="Toggle Terminal"
+                title={isTemplate ? 'Save as project to access terminal' : 'Toggle Terminal'}
               >
                 <TerminalIcon className="w-4 h-4" />
               </button>
@@ -697,11 +779,18 @@ export default function EditorPage() {
               {tools.map(tool => (
                 <button
                   key={tool.id}
-                  onClick={() => setActiveLeftTool(tool.id as any)}
-                  className={`w-full p-3 flex justify-center items-center hover:bg-gray-800 transition-colors ${
+                  onClick={() => {
+                    if (tool.id === 'collaboration' && !checkTemplateRestriction('Collaboration')) {
+                      return;
+                    }
+                    setActiveLeftTool(tool.id as any);
+                  }}
+                  className={`w-full p-3 flex justify-center items-center transition-colors ${
                     activeLeftTool === tool.id ? 'bg-gray-800 border-l-2 border-teal-500' : ''
+                  } ${
+                    tool.id === 'collaboration' && isTemplate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-800 cursor-pointer'
                   }`}
-                  title={tool.tooltip}
+                  title={tool.id === 'collaboration' && isTemplate ? 'Save as project to access collaboration' : tool.tooltip}
                 >
                   <tool.icon className="w-5 h-5" />
                 </button>
@@ -766,11 +855,25 @@ export default function EditorPage() {
                 )}
                 
                 {activeLeftTool === 'collaboration' && (
-                  <CollaborationPanel 
-                    projectId={mockProject.id}
-                    currentFile={openTabs.find(t => t.id === activeTab)?.name}
-                    className="border-0 bg-transparent"
-                  />
+                  isTemplate ? (
+                    <div className="p-4 text-center text-gray-400">
+                      <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">Collaboration features are not available for templates.</p>
+                      <p className="text-xs mt-2">Save this template as a project to collaborate with others.</p>
+                      <button
+                        onClick={() => setShowSaveModal(true)}
+                        className="mt-3 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs rounded transition-colors"
+                      >
+                        Save as Project
+                      </button>
+                    </div>
+                  ) : (
+                    <CollaborationPanel 
+                      projectId={mockProject.id}
+                      currentFile={openTabs.find(t => t.id === activeTab)?.name}
+                      className="border-0 bg-transparent"
+                    />
+                  )
                 )}
                 
                 {activeLeftTool === 'extensions' && (
@@ -828,13 +931,19 @@ export default function EditorPage() {
                   <div
                     key={tab.id}
                     onClick={() => {
+                      // Check if this is AI chat and we're in a template
+                      if (tab.id === 'ai-chat' && !checkTemplateRestriction('AI Assistant')) {
+                        return;
+                      }
                       setActiveTab(tab.id);
                       if (tab.type === 'file') {
                         setEditorValue(tab.content || '');
                       }
                     }}
-                    className={`flex items-center px-3 py-1.5 border-r border-gray-800 cursor-pointer text-sm ${
+                    className={`flex items-center px-3 py-1.5 border-r border-gray-800 text-sm ${
                       activeTab === tab.id ? 'bg-gray-900 text-white' : 'bg-gray-950 text-gray-400 hover:bg-gray-800'
+                    } ${
+                      tab.id === 'ai-chat' && isTemplate ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
                     }`}
                   >
                     <tab.icon className="w-3 h-3 mr-1.5" />
@@ -863,6 +972,22 @@ export default function EditorPage() {
             <div className="flex-1 overflow-hidden">
               {activeTab === 'ai-chat' ? (
                 /* AI Chat Interface */
+                isTemplate ? (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-400 p-6">
+                    <Bot className="w-16 h-16 mb-4 opacity-50" />
+                    <h2 className="text-xl font-semibold mb-2">AI Assistant Not Available</h2>
+                    <p className="text-sm text-center mb-4 max-w-md">
+                      The AI Assistant is only available for projects. Save this template as a project to get AI-powered code assistance.
+                    </p>
+                    <button
+                      onClick={() => setShowSaveModal(true)}
+                      className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors flex items-center space-x-2"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>Save as Project</span>
+                    </button>
+                  </div>
+                ) : (
                 <div className="h-full flex flex-col">
                   <div className="flex-1 overflow-y-auto p-6 space-y-4">
                     {/* Chat Header */}
@@ -932,6 +1057,7 @@ export default function EditorPage() {
                     </div>
                   </div>
                 </div>
+                )
               ) : (
                 /* Enhanced Code Editor */
                 <div className={`h-full relative overflow-hidden ${
@@ -1163,11 +1289,25 @@ export default function EditorPage() {
                 )}
                 
                 {activeRightTab === 'collaboration' && (
-                  <CollaborationPanel 
-                    projectId={mockProject.id}
-                    currentFile={openTabs.find(t => t.id === activeTab)?.name}
-                    className="h-full"
-                  />
+                  isTemplate ? (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400 p-6">
+                      <Users className="w-12 h-12 mb-3 opacity-50" />
+                      <h3 className="text-lg font-medium mb-2">Collaboration Not Available</h3>
+                      <p className="text-sm text-center mb-4">Collaboration features are only available for projects, not templates.</p>
+                      <button
+                        onClick={() => setShowSaveModal(true)}
+                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded transition-colors"
+                      >
+                        Save as Project
+                      </button>
+                    </div>
+                  ) : (
+                    <CollaborationPanel 
+                      projectId={mockProject.id}
+                      currentFile={openTabs.find(t => t.id === activeTab)?.name}
+                      className="h-full"
+                    />
+                  )
                 )}
                 
                 {activeRightTab === 'console' && (
@@ -1223,12 +1363,19 @@ export default function EditorPage() {
               <div className="h-8 bg-gray-950 border-b border-gray-800 flex items-center justify-between">
                 <div className="flex items-center">
                   <button
-                    onClick={() => setActiveBottomTab('terminal')}
+                    onClick={() => {
+                      if (!isTemplate) {
+                        setActiveBottomTab('terminal');
+                      }
+                    }}
                     className={`flex items-center space-x-2 px-3 py-1.5 text-xs transition-colors ${
-                      activeBottomTab === 'terminal'
+                      activeBottomTab === 'terminal' && !isTemplate
                         ? 'bg-gray-900 text-white border-b-2 border-teal-500'
                         : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    } ${
+                      isTemplate ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
+                    title={isTemplate ? 'Save as project to access terminal' : 'Terminal'}
                   >
                     <TerminalIcon className="w-3 h-3" />
                     <span>Terminal</span>
@@ -1257,13 +1404,41 @@ export default function EditorPage() {
               {/* Bottom Panel Content */}
               <div className="flex-1 overflow-hidden">
                 {activeBottomTab === 'terminal' && (
-                  <Terminal className="h-full" />
+                  isTemplate ? (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400 p-6">
+                      <TerminalIcon className="w-12 h-12 mb-3 opacity-50" />
+                      <h3 className="text-lg font-medium mb-2">Terminal Not Available</h3>
+                      <p className="text-sm text-center mb-4">Terminal access is only available for projects, not templates.</p>
+                      <button
+                        onClick={() => setShowSaveModal(true)}
+                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded transition-colors"
+                      >
+                        Save as Project
+                      </button>
+                    </div>
+                  ) : (
+                    <Terminal className="h-full" />
+                  )
                 )}
                 {activeBottomTab === 'team-chat' && (
-                  <ChatPanel 
-                    projectId={mockProject.id}
-                    className="h-full"
-                  />
+                  isTemplate ? (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400 p-6">
+                      <MessageSquare className="w-12 h-12 mb-3 opacity-50" />
+                      <h3 className="text-lg font-medium mb-2">Team Chat Not Available</h3>
+                      <p className="text-sm text-center mb-4">Team chat is only available for projects, not templates.</p>
+                      <button
+                        onClick={() => setShowSaveModal(true)}
+                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded transition-colors"
+                      >
+                        Save as Project
+                      </button>
+                    </div>
+                  ) : (
+                    <ChatPanel 
+                      projectId={mockProject.id}
+                      className="h-full"
+                    />
+                  )
                 )}
               </div>
             </div>
@@ -1434,6 +1609,18 @@ export default function EditorPage() {
             </div>
           </div>
         )}
+        
+        {/* Save Template as Project Modal */}
+        <SaveTemplateAsProjectModal
+          isOpen={showSaveModal}
+          onClose={() => {
+            setShowSaveModal(false);
+            setRestrictedFeatureRequested(null);
+          }}
+          templateName={template?.name || 'Untitled Template'}
+          templateId={template?.key || template?.slug || 'template'}
+          onSaveAsProject={handleSaveAsProject}
+        />
         
         {/* Project Settings Panel */}
         {showProjectSettings && (

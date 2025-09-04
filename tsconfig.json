@@ -17,10 +17,12 @@
       "@swistack/shared": ["packages/shared/src/index"]
     }
   },
+  "include": [],
   "exclude": [
     "node_modules",
     "dist",
     "build",
-    ".next"
+    ".next",
+    "packages"
   ]
 }

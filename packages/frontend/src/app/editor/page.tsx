@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import SaveTemplateAsProjectModal from '@/components/SaveTemplateAsProjectModal';
+import LogoutModal from '@/components/LogoutModal';
 import Editor from '@monaco-editor/react';
 import { 
   ArrowLeft, 
@@ -13,6 +14,7 @@ import {
   Play, 
   Settings,
   FolderTree,
+  LogOut,
   MessageSquare,
   Terminal as TerminalIcon,
   Database,
@@ -82,13 +84,17 @@ interface Tab {
 export default function EditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, httpClient } = useAuth();
+  const { user, httpClient, logout } = useAuth();
   const [template, setTemplate] = useState<any>(null);
   
   // Template restriction state
   const [isTemplate, setIsTemplate] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [restrictedFeatureRequested, setRestrictedFeatureRequested] = useState<string | null>(null);
+  
+  // Logout state
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   // Tools state
   const [activeLeftTool, setActiveLeftTool] = useState<'files' | 'search' | 'git' | 'collaboration' | 'extensions'>('files');
@@ -518,6 +524,28 @@ export default function EditorPage() {
     }
   };
 
+  // Logout functions
+  const handleLogoutClick = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleLogoutConfirm = async () => {
+    try {
+      setIsLoggingOut(true);
+      await logout();
+      router.push('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutModal(false);
+    }
+  };
+
+  const handleLogoutCancel = () => {
+    setShowLogoutModal(false);
+  };
+
   const createNewFile = () => {
     const fileName = prompt('Enter file name:');
     if (fileName) {
@@ -752,18 +780,23 @@ export default function EditorPage() {
                 <Settings className="w-4 h-4" />
               </button>
               <button 
+                onClick={handleLogoutClick}
+                className="p-2 rounded transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+              <button 
                 onClick={() => {
-                  if (!checkTemplateRestriction('Terminal')) {
-                    return;
-                  }
                   setShowBottomPanel(!showBottomPanel);
+                  if (isTemplate && !showBottomPanel) {
+                    setActiveBottomTab('terminal');
+                  }
                 }}
                 className={`p-2 rounded transition-colors ${
                   showBottomPanel ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                } ${
-                  isTemplate ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
-                title={isTemplate ? 'Save as project to access terminal' : 'Toggle Terminal'}
+                title={isTemplate ? 'Terminal (restricted for templates)' : 'Toggle Terminal'}
               >
                 <TerminalIcon className="w-4 h-4" />
               </button>
@@ -1363,19 +1396,13 @@ export default function EditorPage() {
               <div className="h-8 bg-gray-950 border-b border-gray-800 flex items-center justify-between">
                 <div className="flex items-center">
                   <button
-                    onClick={() => {
-                      if (!isTemplate) {
-                        setActiveBottomTab('terminal');
-                      }
-                    }}
+                    onClick={() => setActiveBottomTab('terminal')}
                     className={`flex items-center space-x-2 px-3 py-1.5 text-xs transition-colors ${
-                      activeBottomTab === 'terminal' && !isTemplate
+                      activeBottomTab === 'terminal'
                         ? 'bg-gray-900 text-white border-b-2 border-teal-500'
                         : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                    } ${
-                      isTemplate ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
-                    title={isTemplate ? 'Save as project to access terminal' : 'Terminal'}
+                    title={isTemplate ? 'Terminal (restricted for templates)' : 'Terminal'}
                   >
                     <TerminalIcon className="w-3 h-3" />
                     <span>Terminal</span>
@@ -1620,6 +1647,15 @@ export default function EditorPage() {
           templateName={template?.name || 'Untitled Template'}
           templateId={template?.key || template?.slug || 'template'}
           onSaveAsProject={handleSaveAsProject}
+        />
+        
+        {/* Logout Modal */}
+        <LogoutModal
+          isOpen={showLogoutModal}
+          onClose={handleLogoutCancel}
+          onConfirm={handleLogoutConfirm}
+          userName={user?.firstName}
+          isLoading={isLoggingOut}
         />
         
         {/* Project Settings Panel */}

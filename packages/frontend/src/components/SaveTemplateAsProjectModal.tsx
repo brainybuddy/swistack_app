@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface SaveTemplateAsProjectModalProps {
@@ -18,9 +18,14 @@ export default function SaveTemplateAsProjectModal({
   templateId,
   onSaveAsProject,
 }: SaveTemplateAsProjectModalProps) {
-  const [projectName, setProjectName] = useState(templateName.replace(/^template-/, ''));
+  const [projectName, setProjectName] = useState(templateName);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Update project name when template name changes
+  useEffect(() => {
+    setProjectName(templateName);
+  }, [templateName]);
 
   const handleSave = async () => {
     if (!projectName.trim()) {

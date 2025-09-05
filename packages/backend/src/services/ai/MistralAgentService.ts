@@ -1,9 +1,8 @@
 import { Mistral } from '@mistralai/mistralai';
-// Note: MCP imports commented out due to module resolution issues
-// import { McpClient } from '@modelcontextprotocol/sdk/client';
-// import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import { swiStackMcpToolsServer } from './McpToolsServer';
 
 export interface AgentMessage {
   id: string;
@@ -25,21 +24,38 @@ export interface AgentConversation {
 export class MistralAgentService extends EventEmitter {
   private client: Mistral;
   private agentId: string | null = null;
-  private mcpClient: any | null = null;
+  private mcpClient: Client | null = null;
   private conversations: Map<string, AgentConversation> = new Map();
+  private ready: boolean = false;
+  private lastError: string | null = null;
+  private retryTimer: NodeJS.Timeout | null = null;
+  private retryCount: number = 0;
+  private maxRetryDelayMs: number = 60_000;
 
   constructor() {
     super();
-    this.client = new Mistral({
-      apiKey: process.env.MISTRAL_API_KEY!,
-    });
+    const apiKey = process.env.MISTRAL_API_KEY;
+    if (!apiKey) {
+      this.lastError = 'MISTRAL_API_KEY is not set';
+      // Create a dummy client to avoid crashes, but mark as not ready
+      this.client = new Mistral({ apiKey: 'invalid' });
+      return;
+    }
+    this.client = new Mistral({ apiKey });
   }
 
   async initialize(): Promise<void> {
     try {
+      if (this.ready) return;
+      if (!process.env.MISTRAL_API_KEY) {
+        this.lastError = 'MISTRAL_API_KEY is not set';
+        this.ready = false;
+        return;
+      }
       // Create the SwiStack coding agent
+      const model = process.env.MISTRAL_MODEL || 'mistral-large-latest';
       const agent = await this.client.beta.agents.create({
-        model: 'mistral-large-latest',
+        model,
         name: 'SwiStack Coding Agent',
         description: 'An autonomous coding agent integrated with the SwiStack development platform.',
         instructions: `You are an integral part of the SwiStack AI Coding Development Platform. Your purpose is to assist users with software development tasks within their SwiStack projects.
@@ -62,7 +78,51 @@ Available capabilities:
 - Database and API integration assistance
 
 Always prioritize code quality, security best practices, and user experience.`,
-        tools: [{ type: 'code_interpreter' }],
+        // Prefer using tools for project/file questions
+        tool_choice: 'auto',
+        tools: [
+          { type: 'code_interpreter' },
+          {
+            type: 'function',
+            function: {
+              name: 'count_files',
+              description: 'Return the total number of files in the current project',
+              parameters: { type: 'object', properties: {}, additionalProperties: false }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'list_tree',
+              description: 'List the project file tree as path/type entries',
+              parameters: { type: 'object', properties: {}, additionalProperties: false }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'read_file',
+              description: 'Read a file content by path',
+              parameters: {
+                type: 'object',
+                properties: { path: { type: 'string', description: 'Project-relative file path' } },
+                required: ['path']
+              }
+            }
+          },
+          {
+            type: 'function',
+            function: {
+              name: 'search_files',
+              description: 'Search for files by a query string',
+              parameters: {
+                type: 'object',
+                properties: { query: { type: 'string', description: 'Search term' } },
+                required: ['query']
+              }
+            }
+          }
+        ],
       });
 
       this.agentId = agent.id;
@@ -71,25 +131,49 @@ Always prioritize code quality, security best practices, and user experience.`,
       await this.initializeMcpClient();
       
       console.log(`SwiStack Coding Agent initialized with ID: ${this.agentId}`);
+      this.ready = true;
+      this.lastError = null;
+      this.retryCount = 0;
+      if (this.retryTimer) {
+        clearTimeout(this.retryTimer);
+        this.retryTimer = null;
+      }
     } catch (error) {
       console.error('Failed to initialize Mistral agent:', error);
-      throw error;
+      this.ready = false;
+      this.lastError = error instanceof Error ? error.message : 'Unknown initialization error';
+      // Schedule retry with exponential backoff
+      const delay = Math.min(1000 * Math.pow(2, this.retryCount), this.maxRetryDelayMs);
+      this.retryCount++;
+      if (this.retryTimer) clearTimeout(this.retryTimer);
+      this.retryTimer = setTimeout(() => this.initialize().catch(() => {}), delay);
+      // Do not throw; keep server running and report status via endpoint
     }
   }
 
   private async initializeMcpClient(): Promise<void> {
     try {
-      // MCP client initialization temporarily disabled due to module resolution
-      // Will be implemented in a future update
-      console.log('MCP client initialization skipped - will be implemented later');
+      // Initialize MCP client to connect to our tools server
+      this.mcpClient = new Client({
+        name: "swistack-agent-client",
+        version: "1.0.0"
+      });
+      
+      // Start the MCP tools server
+      await swiStackMcpToolsServer.start();
+      
+      console.log('✅ MCP client and tools server initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize MCP client:', error);
+      console.error('❌ Failed to initialize MCP client:', error);
       // Continue without MCP tools for now
     }
   }
 
   async createConversation(userId: string): Promise<string> {
-    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    if (!this.ready || !this.agentId) {
+      throw new Error(this.lastError || 'Agent not initialized');
+    }
+    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     
     const conversation: AgentConversation = {
       id: conversationId,
@@ -104,9 +188,9 @@ Always prioritize code quality, security best practices, and user experience.`,
     return conversationId;
   }
 
-  async sendMessage(conversationId: string, userMessage: string): Promise<AsyncGenerator<any, void, unknown>> {
-    if (!this.agentId) {
-      throw new Error('Agent not initialized');
+  async sendMessage(conversationId: string, userMessage: string, projectId?: string): Promise<AsyncGenerator<any, void, unknown>> {
+    if (!this.ready || !this.agentId) {
+      throw new Error(this.lastError || 'Agent not initialized');
     }
 
     const conversation = this.conversations.get(conversationId);
@@ -125,17 +209,21 @@ Always prioritize code quality, security best practices, and user experience.`,
     conversation.messages.push(userMsg);
     conversation.updatedAt = new Date();
 
+    // Set project context for MCP tools if projectId is provided
+    if (projectId) {
+      await this.setProjectContext(projectId);
+    }
+
     try {
       // Start conversation with Mistral agent
       const conversationResult = await this.client.beta.conversations.startStream({
         agentId: this.agentId,
-        messages: [
-          {
-            role: 'user',
-            content: userMessage,
-          }
-        ],
-      });
+        messages: [{
+          role: 'user',
+          content: userMessage,
+        }],
+        inputs: userMessage // Add the required inputs parameter
+      } as any);
 
       // Return streaming generator
       return this.streamResponse(conversationId, conversationResult);
@@ -151,16 +239,17 @@ Always prioritize code quality, security best practices, and user experience.`,
 
     try {
       for await (const event of stream) {
-        // Handle conversation entry events
-        if (event.type === 'conversation_entry') {
-          if (event.role === 'assistant' && event.content) {
-            fullContent += event.content;
+        // Handle Mistral agent message delta events
+        if (event.event === 'message.output.delta' && event.data) {
+          const data = event.data;
+          if (data.role === 'assistant' && data.content) {
+            fullContent += data.content;
             
             yield {
               type: 'message',
               data: {
                 role: 'assistant',
-                content: event.content,
+                content: data.content,
                 timestamp: new Date(),
               },
             };
@@ -223,9 +312,112 @@ Always prioritize code quality, security best practices, and user experience.`,
     return conversation ? conversation.messages : [];
   }
 
+  getStatus() {
+    const model = process.env.MISTRAL_MODEL || 'mistral-large-latest';
+    return {
+      ready: this.ready,
+      agentId: this.agentId,
+      lastError: this.lastError,
+      retries: this.retryCount,
+      model,
+      hasApiKey: !!process.env.MISTRAL_API_KEY,
+    };
+  }
+
   async cleanup(): Promise<void> {
     if (this.mcpClient) {
       await this.mcpClient.close();
+    }
+  }
+
+  /**
+   * Set project context for MCP tools to access specific project files
+   */
+  private async setProjectContext(projectId: string): Promise<void> {
+    try {
+      // Import here to avoid circular dependency
+      const { projectFileSystem } = await import('../ProjectFileSystem');
+      const { ProjectFileModel } = await import('../../models/ProjectFile');
+      
+      // Initialize project if not already done
+      await projectFileSystem.initializeProject(projectId, {});
+      
+      // Get project configuration
+      const config = projectFileSystem.getProjectConfig(projectId);
+      if (!config) {
+        console.warn(`[MistralAgent] Could not get project config for ${projectId}`);
+        return;
+      }
+      
+      // Sync database files to filesystem for MCP tools access
+      await this.syncProjectFilesToFilesystem(projectId, config.basePath);
+      
+      // Set PROJECT_PATH environment variable for MCP tools
+      process.env.PROJECT_PATH = config.basePath;
+      console.log(`[MistralAgent] Set PROJECT_PATH to: ${config.basePath} for project ${projectId}`);
+      
+      // Reinitialize MCP tools server with new project path
+      await this.reinitializeMcpTools();
+    } catch (error) {
+      console.error(`[MistralAgent] Failed to set project context for ${projectId}:`, error);
+    }
+  }
+
+  /**
+   * Sync project files from database to filesystem so MCP tools can access them
+   */
+  private async syncProjectFilesToFilesystem(projectId: string, basePath: string): Promise<void> {
+    try {
+      const { ProjectFileModel } = await import('../../models/ProjectFile');
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      
+      // Get all project files from database
+      const files = await ProjectFileModel.getProjectTree(projectId);
+      console.log(`[MistralAgent] Found ${files.length} files in database for project ${projectId}`);
+      
+      // Create directories first
+      const directories = files.filter(f => f.type === 'directory');
+      for (const dir of directories) {
+        const dirPath = path.join(basePath, dir.path);
+        await fs.mkdir(dirPath, { recursive: true });
+        console.log(`[MistralAgent] Created directory: ${dir.path}`);
+      }
+      
+      // Then create files
+      const fileItems = files.filter(f => f.type === 'file' && f.content);
+      for (const file of fileItems) {
+        const filePath = path.join(basePath, file.path);
+        
+        // Ensure parent directory exists
+        await fs.mkdir(path.dirname(filePath), { recursive: true });
+        
+        // Write file content
+        await fs.writeFile(filePath, file.content, 'utf8');
+        console.log(`[MistralAgent] Synced file to filesystem: ${file.path}`);
+      }
+      
+      console.log(`[MistralAgent] Successfully synced ${fileItems.length} files to filesystem`);
+    } catch (error) {
+      console.error(`[MistralAgent] Failed to sync files to filesystem:`, error);
+    }
+  }
+
+  /**
+   * Reinitialize MCP tools server with updated PROJECT_PATH
+   */
+  private async reinitializeMcpTools(): Promise<void> {
+    try {
+      // Close existing MCP client if it exists
+      if (this.mcpClient) {
+        await this.mcpClient.close();
+        this.mcpClient = null;
+      }
+      
+      // Reinitialize MCP client and tools server
+      await this.initializeMcpClient();
+    } catch (error) {
+      console.error('[MistralAgent] Failed to reinitialize MCP tools:', error);
     }
   }
 }

@@ -1,11 +1,13 @@
 import express from 'express';
 import { mistralAgentService } from '../services/ai/MistralAgentService';
+import { aiPreviewMonitor } from '../services/ai/AIPreviewMonitor';
 import { authMiddleware } from '../middleware/auth';
 
 const router = express.Router();
 
-// Initialize agent service
+// Initialize agent service and AI preview monitor
 mistralAgentService.initialize().catch(console.error);
+console.log('🤖 AI Preview Monitor initialized and ready');
 
 // Create new conversation
 router.post('/conversations', authMiddleware, async (req, res) => {
@@ -89,22 +91,16 @@ router.get('/conversations/:conversationId/messages', authMiddleware, async (req
 });
 
 // Get agent status
-router.get('/status', authMiddleware, async (req, res) => {
+router.get('/status', async (_req, res) => {
   try {
+    const status = mistralAgentService.getStatus();
     res.json({
-      status: 'active',
-      agentName: 'SwiStack Code Agent',
-      capabilities: [
-        'Code Generation',
-        'File Operations',
-        'Code Execution',
-        'Live Preview Integration',
-        'Project Analysis'
-      ]
+      success: true,
+      data: status,
     });
   } catch (error) {
     console.error('Error getting agent status:', error);
-    res.status(500).json({ error: 'Failed to get agent status' });
+    res.status(500).json({ success: false, error: 'Failed to get agent status' });
   }
 });
 

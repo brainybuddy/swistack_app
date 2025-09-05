@@ -149,10 +149,10 @@ export default function RepositoriesView() {
     try {
       switch (action) {
         case 'open':
-          router.push(`/editor/${project.slug}`);
+          router.push(`/editor/${project.slug || project.id}`);
           break;
         case 'settings':
-          router.push(`/editor/${project.slug}?tab=settings`);
+          router.push(`/editor/${project.id}?tab=settings`);
           break;
         case 'duplicate':
           // Mock duplicate functionality

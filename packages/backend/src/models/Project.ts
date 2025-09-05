@@ -327,7 +327,14 @@ export class ProjectModel {
   }
 
   static async findById(id: string, userId?: string): Promise<DatabaseProject | null> {
-    let query = db('projects').where('id', id);
+    try {
+      // Validate UUID format first
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(id)) {
+        return null; // Not a valid UUID, return null so slug lookup can be tried
+      }
+      
+      let query = db('projects').where('id', id);
     
     // If userId provided, check if user has access
     if (userId) {
@@ -359,6 +366,11 @@ export class ProjectModel {
     
     const project = await query.first();
     return project || null;
+    } catch (error) {
+      // If UUID parsing fails or any other error, return null
+      console.log('findById error (expected for non-UUID identifiers):', error.message);
+      return null;
+    }
   }
 
   static async findBySlug(slug: string, userId?: string): Promise<DatabaseProject | null> {

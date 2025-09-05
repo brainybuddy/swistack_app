@@ -49,9 +49,8 @@ export class ProjectFileSystem {
     // Use environment variable if available
     const workspaceBase = process.env.WORKSPACE_BASE_PATH || '/Applications/swistack_app';
     
-    // Determine path based on project type
-    // This can be enhanced to support multiple project types
-    return path.join(workspaceBase, 'packages', 'frontend', 'src');
+    // Save projects in repositories directory
+    return path.join(workspaceBase, 'repositories', projectId);
   }
 
   /**

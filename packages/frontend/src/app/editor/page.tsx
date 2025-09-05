@@ -4,8 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { SocketProvider } from '@/contexts/SocketContext';
 import SaveTemplateAsProjectModal from '@/components/SaveTemplateAsProjectModal';
 import LogoutModal from '@/components/LogoutModal';
+import ProjectCreatedDialog from '@/components/ProjectCreatedDialog';
 import Editor from '@monaco-editor/react';
 import { 
   ArrowLeft, 
@@ -59,7 +61,9 @@ import {
 // Import our custom components
 import CollaborationPanel from '@/components/collaboration/CollaborationPanel';
 import ChatPanel from '@/components/collaboration/ChatPanel';
+import AIAssistantEnhanced from '@/components/ai/AIAssistantEnhanced';
 import Terminal from '@/components/ide/Terminal';
+import AIPreviewAssistant from '@/components/ai/AIPreviewAssistant';
 import NotificationSystem from '@/components/notifications/NotificationSystem';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 import LivePreview from '@/components/preview/LivePreview';
@@ -91,9 +95,12 @@ export default function EditorPage() {
   const [isTemplate, setIsTemplate] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [restrictedFeatureRequested, setRestrictedFeatureRequested] = useState<string | null>(null);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [createdProjectName, setCreatedProjectName] = useState('');
   
   // Logout state
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   // Tools state
@@ -168,6 +175,86 @@ export default function EditorPage() {
   };
 
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  
+  // Fetch project file tree for saved projects
+  const fetchProjectFileTree = async (projectId: string) => {
+    try {
+      console.log('📁 Fetching project file tree for:', projectId);
+      const res = await httpClient.get(`/api/files/projects/${projectId}/tree`);
+      if (!res.success || !(res as any)?.data?.files) {
+        console.warn('No files returned for project:', res.error);
+        return;
+      }
+
+      const files = (res as any).data.files as Array<{ path: string; type: 'file' | 'directory'; content?: string }>;
+
+      // Optional: ensure files match template definition by merging any missing template files
+      let mergedFlat = [...files];
+      const templateKey = (template as any)?.template as string | undefined;
+      if (templateKey) {
+        try {
+          const tplRes = await httpClient.post('/api/projects/templates/full-data', { templateKey });
+          if (tplRes.success && tplRes.data?.files) {
+            const dbPaths = new Set(mergedFlat.map(f => f.path));
+            const tplFiles = tplRes.data.files as Array<{ path: string; type: 'file' | 'directory'; content?: string }>;
+            for (const tf of tplFiles) {
+              if (!dbPaths.has(tf.path)) {
+                mergedFlat.push({ path: tf.path, type: tf.type, content: tf.content });
+                dbPaths.add(tf.path);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Template merge skipped due to error:', e);
+        }
+      }
+
+      // Reuse converter: turn flat list into nested FileNode tree
+      const buildTreeFromFlat = (flat: typeof files): FileNode[] => {
+        const pathMap = new Map<string, FileNode>();
+        const roots: FileNode[] = [];
+
+        flat.forEach((entry) => {
+          const parts = entry.path.split('/');
+          let currentPath = '';
+
+          parts.forEach((part, index) => {
+            const prevPath = currentPath;
+            currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+            if (!pathMap.has(currentPath)) {
+              const isFile = index === parts.length - 1 && entry.type === 'file';
+              const node: FileNode = {
+                name: part,
+                type: isFile ? 'file' : 'folder',
+                content: isFile ? entry.content : undefined,
+                children: isFile ? undefined : [],
+                language: isFile ? (currentPath.endsWith('.tsx') ? 'typescript' : currentPath.endsWith('.js') ? 'javascript' : currentPath.endsWith('.css') ? 'css' : currentPath.endsWith('.html') ? 'html' : 'text') : undefined,
+              };
+              pathMap.set(currentPath, node);
+
+              if (prevPath) {
+                const parent = pathMap.get(prevPath);
+                if (parent && parent.children) parent.children.push(node);
+              } else {
+                roots.push(node);
+              }
+            }
+          });
+        });
+
+        return roots;
+      };
+
+      const tree = buildTreeFromFlat(mergedFlat);
+      setFileTree(tree);
+      // Do not auto-open any code file; keep AI Assistant as the only open tab
+      setOpenTabs([{ id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }]);
+      setActiveTab('ai-chat');
+    } catch (err) {
+      console.error('Failed to fetch project file tree:', err);
+    }
+  };
 
   // Function to fetch full template data via POST to avoid 431 errors
   const fetchTemplateData = async (templateKey: string) => {
@@ -213,6 +300,10 @@ export default function EditorPage() {
         const project = JSON.parse(decodeURIComponent(projectData));
         setTemplate(project);
         setIsTemplate(false); // This is a project, not a template
+        // Load project files from backend
+        if (project?.id) {
+          fetchProjectFileTree(project.id);
+        }
         
         // Set AI-specific welcome message
         if (project.createdBy === 'ai') {
@@ -260,17 +351,29 @@ export default function EditorPage() {
             ]);
           }
         } else {
-          setTemplate({ name: 'Default Template', language: 'TypeScript', description: 'Project template' });
-          setIsTemplate(true);
-          setMessages([
-            { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
-          ]);
+          // Final fallback: if a projectId is present, treat as project and fetch from backend
+          const projectId = searchParams.get('projectId');
+          if (projectId) {
+            console.log('🔗 Detected projectId without project payload. Loading project tree...');
+            setIsTemplate(false);
+            fetchProjectFileTree(projectId);
+            setTemplate({ name: 'Project', language: 'JavaScript', slug: projectId, id: projectId });
+            setMessages([
+              { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
+            ]);
+          } else {
+            setTemplate({ name: 'Default Template', language: 'TypeScript', description: 'Project template' });
+            setIsTemplate(true);
+            setMessages([
+              { role: 'assistant', content: 'Hello! I\'m your AI assistant. I can help you write code, debug issues, and answer questions about your project.' }
+            ]);
+          }
         }
       }
     }
   }, [searchParams]);
 
-  // Convert template files to fileTree structure
+  // Convert template files to fileTree structure (for templates opened directly)
   useEffect(() => {
     console.log('Template conversion useEffect triggered:', { template, hasFiles: template?.files, isArray: Array.isArray(template?.files) });
     if (template && template.files && Array.isArray(template.files)) {
@@ -320,26 +423,36 @@ export default function EditorPage() {
       const templateFiles = template.files || [];
       const newFileTree = convertTemplateToFileTree(templateFiles);
       setFileTree(newFileTree);
-      
-      // For templates, start with AI Assistant tab active
-      // For projects, set the first file as active if available
-      const firstFile = templateFiles.find((f: any) => f.type === 'file');
-      if (firstFile) {
-        setOpenTabs([
-          { id: firstFile.path, name: firstFile.path.split('/').pop() || 'file', type: 'file', icon: Code2 },
-          { id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }
-        ]);
-        // If it's a template, default to AI Assistant tab, otherwise open the first file
-        setActiveTab(isTemplate ? 'ai-chat' : firstFile.path);
-      } else {
-        // No files available, just show AI Assistant
-        setOpenTabs([
-          { id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }
-        ]);
-        setActiveTab('ai-chat');
-      }
+      // Do not auto-open any code file; only AI Assistant should be open/active
+      setOpenTabs([{ id: 'ai-chat', name: 'AI Assistant', type: 'chat', icon: MessageSquare }]);
+      setActiveTab('ai-chat');
     }
   }, [template, isTemplate]);
+
+  // Lazy-load file content when opening a file without content (projects)
+  const loadProjectFileContent = async (path: string) => {
+    try {
+      const projectId = template?.id;
+      if (!projectId) return null;
+      const safePath = path.split('/').map(encodeURIComponent).join('/');
+      const res = await httpClient.get(`/api/files/projects/${projectId}/files/${safePath}`);
+      if (res.success && (res as any).data?.file) {
+        const content = (res as any).data.file.content || '';
+        // Update tree with content
+        const updateContent = (nodes: FileNode[], prefix = ''): FileNode[] => nodes.map(n => {
+          const p = prefix ? `${prefix}/${n.name}` : n.name;
+          if (n.type === 'file' && p === path) return { ...n, content };
+          if (n.type === 'folder' && n.children) return { ...n, children: updateContent(n.children, p) };
+          return n;
+        });
+        setFileTree(prev => updateContent(prev));
+        return content;
+      }
+    } catch (err) {
+      console.error('Failed to load file content:', path, err);
+    }
+    return null;
+  };
 
   // Initialize editor with first file content
   useEffect(() => {
@@ -438,21 +551,22 @@ export default function EditorPage() {
     setExpandedFolders(newExpanded);
   };
 
-  const openFile = (file: FileNode, path: string) => {
+  const openFile = async (file: FileNode, path: string) => {
     const tabId = path;
     const existingTab = openTabs.find(t => t.id === tabId);
     
+    // Ensure content is loaded for project files
+    let content = file.content;
+    if ((!content || content.length === 0) && !isTemplate) {
+      const loaded = await loadProjectFileContent(path);
+      if (loaded !== null) content = loaded;
+    }
+
     if (!existingTab) {
-      setOpenTabs([...openTabs, { 
-        id: tabId, 
-        name: file.name, 
-        type: 'file',
-        content: file.content || '',
-        icon: File
-      }]);
+      setOpenTabs([...openTabs, { id: tabId, name: file.name, type: 'file', content: content || '', icon: File }]);
     }
     setActiveTab(tabId);
-    setEditorValue(file.content || '');
+    setEditorValue(content || '');
   };
 
   const closeTab = (tabId: string, e: React.MouseEvent) => {
@@ -513,8 +627,9 @@ export default function EditorPage() {
         const newUrl = `/editor?project=${encodeURIComponent(JSON.stringify(response.data))}`;
         window.history.replaceState({}, '', newUrl);
         
-        // Show success message
-        alert(`Project "${projectName}" created successfully!`);
+        // Show success dialog
+        setCreatedProjectName(projectName);
+        setShowSuccessDialog(true);
       } else {
         throw new Error(response.error || 'Failed to create project');
       }
@@ -626,7 +741,7 @@ export default function EditorPage() {
   
   // Mock project data for components
   const mockProject = {
-    id: template?.slug || 'ai-project',
+    id: (template as any)?.id || template?.slug || 'ai-project',
     name: template?.name || 'AI Project',
     description: template?.description || 'AI Generated Project',
     isPublic: false,
@@ -690,8 +805,15 @@ export default function EditorPage() {
     }
   };
 
+  // Prefer real project ID from template or URL param for socket tools
+  // Derive the real DB project ID (UUID) for sockets/tools
+  const rawProjectId = ((template as any)?.id as string) || (searchParams.get && (searchParams.get('projectId') || '')) || '';
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const projectIdForSocket = uuidRegex.test(rawProjectId) ? rawProjectId : undefined;
+
   return (
     <ProtectedRoute requireAuth={true}>
+      <SocketProvider projectId={projectIdForSocket}>
       <div key="editor-layout-v2" className="h-screen bg-gray-900 text-white flex flex-col overflow-hidden">
         {/* Header */}
         <header className="h-10 bg-gray-950 border-b border-gray-800 px-3 flex items-center justify-between">
@@ -1009,87 +1131,19 @@ export default function EditorPage() {
                   <div className="h-full flex flex-col items-center justify-center text-gray-400 p-6">
                     <Bot className="w-16 h-16 mb-4 opacity-50" />
                     <h2 className="text-xl font-semibold mb-2">AI Assistant Not Available</h2>
-                    <p className="text-sm text-center mb-4 max-w-md">
-                      The AI Assistant is only available for projects. Save this template as a project to get AI-powered code assistance.
-                    </p>
-                    <button
-                      onClick={() => setShowSaveModal(true)}
-                      className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors flex items-center space-x-2"
-                    >
+                    <p className="text-sm text-center mb-4 max-w-md">The AI Assistant is only available for projects. Save this template as a project to get AI-powered code assistance.</p>
+                    <button onClick={() => setShowSaveModal(true)} className="px-6 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors flex items-center space-x-2">
                       <Save className="w-4 h-4" />
                       <span>Save as Project</span>
                     </button>
                   </div>
                 ) : (
-                <div className="h-full flex flex-col">
-                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {/* Chat Header */}
-                    {messages.length === 0 && (
-                      <div className="text-center py-4">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-teal-600/20 rounded-2xl mb-3">
-                          <Sparkles className="w-8 h-8 text-teal-400" />
-                        </div>
-                        <h2 className="text-xl font-semibold text-white mb-1">AI Assistant</h2>
-                        <p className="text-sm text-gray-400">I can help you write code, debug, and answer questions</p>
-                      </div>
-                    )}
-
-                    {/* Messages */}
-                    <div className="space-y-4">
-                      {messages.map((msg, idx) => (
-                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-2xl ${msg.role === 'user' ? 'order-2' : ''}`}>
-                            <div className="flex items-start space-x-3">
-                              {msg.role === 'assistant' && (
-                                <div className="w-8 h-8 bg-teal-600 rounded-full flex items-center justify-center flex-shrink-0">
-                                  <Bot className="w-4 h-4 text-white" />
-                                </div>
-                              )}
-                              <div className={`rounded-lg p-4 ${
-                                msg.role === 'user' 
-                                  ? 'bg-teal-600/20 text-white' 
-                                  : 'bg-gray-800 text-gray-300'
-                              }`}>
-                                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                              </div>
-                              {msg.role === 'user' && (
-                                <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
-                                  <User className="w-4 h-4 text-white" />
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  {/* Input Area */}
-                  <div className="border-t border-gray-800 p-4">
-                    <div className="flex space-x-3">
-                      <input
-                        type="text"
-                        value={inputMessage}
-                        onChange={(e) => setInputMessage(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                        placeholder="Ask anything about your code..."
-                        className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-teal-500 transition-colors"
-                      />
-                      <button
-                        onClick={sendMessage}
-                        className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors flex items-center space-x-2"
-                      >
-                        <Send className="w-4 h-4" />
-                        <span className="text-sm">Send</span>
-                      </button>
-                    </div>
-                    <div className="mt-2 flex items-center space-x-4 text-xs text-gray-500">
-                      <span>Press Enter to send</span>
-                      <span>•</span>
-                      <span>Shift+Enter for new line</span>
-                    </div>
-                  </div>
-                </div>
+                  <AIAssistantEnhanced
+                    projectId={projectIdForSocket || ''}
+                    currentFile={openTabs.find(t => t.id === activeTab)?.name}
+                    fileContent={editorValue}
+                    className="h-full"
+                  />
                 )
               ) : (
                 /* Enhanced Code Editor */
@@ -1657,6 +1711,29 @@ export default function EditorPage() {
           userName={user?.firstName}
           isLoading={isLoggingOut}
         />
+
+        {/* Project Created Success Dialog */}
+        <ProjectCreatedDialog
+          isOpen={showSuccessDialog}
+          onClose={() => setShowSuccessDialog(false)}
+          projectName={createdProjectName}
+          onOpenProject={() => {
+            // Get the project data from the current state
+            const currentProject = searchParams.get('project');
+            if (currentProject) {
+              try {
+                const project = JSON.parse(decodeURIComponent(currentProject));
+                if (project.id) {
+                  router.push(`/editor/${project.id}`);
+                } else if (project.slug) {
+                  router.push(`/editor/${project.slug}`);
+                }
+              } catch (e) {
+                console.error('Error parsing project data:', e);
+              }
+            }
+          }}
+        />
         
         {/* Project Settings Panel */}
         {showProjectSettings && (
@@ -1680,7 +1757,15 @@ export default function EditorPage() {
             </div>
           </div>
         )}
+        
+        {/* AI Preview Assistant */}
+        <AIPreviewAssistant 
+          projectId={mockProject.id}
+          isVisible={showAIAssistant}
+          onToggle={() => setShowAIAssistant(!showAIAssistant)}
+        />
       </div>
+      </SocketProvider>
     </ProtectedRoute>
   );
 }

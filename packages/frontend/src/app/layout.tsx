@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { AuthProvider } from '../contexts/AuthContext';
-import { CollaborationProvider } from '../contexts/CollaborationContext';
+import { SocketProvider } from '../contexts/SocketContext';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -17,9 +17,9 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>
-          <CollaborationProvider>
+          <SocketProvider>
             {children}
-          </CollaborationProvider>
+          </SocketProvider>
         </AuthProvider>
       </body>
     </html>

@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/AuthService';
 import { DatabaseUser } from '../models/User';
 import rateLimit from 'express-rate-limit';
-import { authConfig } from '../config/auth';
+import { getAuthConfig } from '../config/auth';
 
 declare global {
   namespace Express {
@@ -13,6 +13,7 @@ declare global {
   }
 }
 
+const authConfig = getAuthConfig();
 export const authRateLimit = rateLimit({
   windowMs: authConfig.rateLimit.windowMs,
   max: authConfig.rateLimit.max,

@@ -68,22 +68,48 @@ class CollaborationService {
   private setupSocketHandlers() {
     this.io.use(async (socket, next) => {
       try {
+        console.log('WebSocket auth attempt:', { 
+          auth: socket.handshake.auth, 
+          query: socket.handshake.query 
+        });
+        
         const token = socket.handshake.auth.token;
         if (!token) {
+          console.log('WebSocket auth failed: No token provided');
           return next(new Error('Authentication token required'));
         }
 
+        console.log('About to verify JWT with secret length:', process.env.JWT_SECRET?.length);
+        console.log('JWT secret starts with:', process.env.JWT_SECRET?.substring(0, 50) + '...');
+        
         const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
-        const user = await User.query().findById(decoded.id);
+        console.log('JWT decoded successfully:', { userId: decoded.userId || decoded.id, email: decoded.email });
+        
+        console.log('Looking up user with ID:', decoded.userId || decoded.id);
+        const user = await User.query().findById(decoded.userId || decoded.id);
+        console.log('User lookup result:', user ? { id: user.id, email: user.email } : 'not found');
         
         if (!user) {
+          console.log('WebSocket auth failed: User not found for ID', decoded.userId || decoded.id);
           return next(new Error('User not found'));
         }
+        
+        console.log('WebSocket auth successful for user:', user.email);
 
         socket.data.user = user;
         next();
       } catch (error) {
-        next(new Error('Invalid authentication token'));
+        console.log('WebSocket auth error:', error instanceof Error ? error.message : error);
+        if (error instanceof Error && error.name === 'TokenExpiredError') {
+          console.log('JWT token expired');
+          return next(new Error('Token expired'));
+        }
+        if (error instanceof Error && error.name === 'JsonWebTokenError') {
+          console.log('Invalid JWT token');
+          return next(new Error('Invalid token'));
+        }
+        console.log('Other JWT/auth error:', error);
+        next(new Error('Authentication failed'));
       }
     });
 

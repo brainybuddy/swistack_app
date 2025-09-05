@@ -74,7 +74,7 @@ export const CollaborationProvider: React.FC<CollaborationProviderProps> = ({ ch
 
     console.log('Connecting to collaboration server...');
     
-    const newSocket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001', {
+    const newSocket = io(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001', {
       auth: {
         token: token
       },

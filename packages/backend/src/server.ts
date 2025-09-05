@@ -1,13 +1,44 @@
+// Load environment variables FIRST, before any other imports
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment variables robustly for monorepo setups
+console.log('Loading default .env...');
+dotenv.config();
+console.log('JWT_SECRET after default .env:', !!process.env.JWT_SECRET, process.env.JWT_SECRET?.length);
+
+// Ensure backend package .env is loaded even if CWD differs
+if (!process.env.MISTRAL_API_KEY || !process.env.JWT_SECRET) {
+  try {
+    const backendEnvPath = path.resolve(__dirname, '../.env');
+    console.log('Loading backend .env from:', backendEnvPath);
+    dotenv.config({ path: backendEnvPath });
+    console.log('JWT_SECRET after backend .env:', !!process.env.JWT_SECRET, process.env.JWT_SECRET?.length);
+  } catch (e) {
+    console.log('Failed to load backend .env:', e);
+  }
+}
+// As a last resort, try monorepo root .env
+if (!process.env.MISTRAL_API_KEY || !process.env.JWT_SECRET) {
+  try {
+    const rootEnvPath = path.resolve(__dirname, '../../.env');
+    console.log('Loading root .env from:', rootEnvPath);
+    dotenv.config({ path: rootEnvPath });
+    console.log('JWT_SECRET after root .env:', !!process.env.JWT_SECRET, process.env.JWT_SECRET?.length);
+  } catch (e) {
+    console.log('Failed to load root .env:', e);
+  }
+}
+
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import passport from 'passport';
 import { Server } from 'socket.io';
 
 import { API_ENDPOINTS, HTTP_STATUS } from '@swistack/shared';
-import { authConfig } from './config/auth';
+import { getAuthConfig } from './config/auth';
 import { authRouter } from './routes/auth';
 import { OAuthService } from './services/OAuthService';
 import { projectsRouter } from './routes/projects';
@@ -27,9 +58,8 @@ import { GitService } from './services/GitService';
 import { MigrationService } from './services/MigrationService';
 import { CollaborationService } from './services/CollaborationService';
 import { ProjectUpdateService } from './services/ProjectUpdateService';
+import { WebSocketService } from './services/WebSocketService';
 import { ErrorResponseUtil } from './utils/ErrorResponse';
-
-dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
@@ -41,9 +71,12 @@ const io = new Server(server, {
   }
 });
 
-// Initialize collaboration service
+// Initialize collaboration service with proper authentication
 const collaborationService = new CollaborationService(io);
 collaborationService.initialize();
+
+// Initialize WebSocket service for AI agent communication
+const webSocketService = new WebSocketService(io);
 
 // Initialize project update service
 ProjectUpdateService.initialize(io);
@@ -52,6 +85,7 @@ const PORT = process.env.PORT || 3001;
 
 // Security middleware
 app.use(helmet());
+const authConfig = getAuthConfig();
 app.use(cors(authConfig.cors));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));

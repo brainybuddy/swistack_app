@@ -165,7 +165,7 @@ export default function TemplatesView({ onSelectTemplate }: TemplatesViewProps) 
       
       if (response.success && response.data) {
         const project = response.data.project;
-        router.push(`/editor/${project.slug}`);
+        router.push(`/editor/${project.id}`);
       } else {
         throw new Error(response.error || 'Failed to create project');
       }

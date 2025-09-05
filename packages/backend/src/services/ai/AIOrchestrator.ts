@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { codeExecutionService } from './CodeExecutionService';
-import TerminalService from '../TerminalService';
+// import TerminalService from '../TerminalService'; // TODO: Implement TerminalService
 import { ProjectFileModel } from '../../models/ProjectFile';
 import {
   AIMessage,
@@ -395,13 +395,14 @@ export class AIOrchestrator extends EventEmitter {
     // Get or create terminal session
     let sessionId = this.terminalSessions.get(projectId);
     if (!sessionId) {
-      sessionId = TerminalService.createSession(projectId, 'ai-assistant');
+      // sessionId = TerminalService.createSession(projectId, 'ai-assistant'); // TODO: Implement TerminalService
       this.terminalSessions.set(projectId, sessionId);
     }
 
     try {
       // Execute command through terminal service
-      const outputs = await TerminalService.executeCommand(sessionId, command);
+      // const outputs = await TerminalService.executeCommand(sessionId, command); // TODO: Implement TerminalService
+      const outputs = { success: false, output: 'Terminal service not implemented', error: 'Service unavailable' };
       
       // Combine outputs based on actual TerminalOutput structure
       const output = outputs
@@ -624,9 +625,9 @@ export class AIOrchestrator extends EventEmitter {
    * Get project base path
    */
   private async getProjectBasePath(projectId: string): Promise<string> {
-    // For now, use a consistent path structure
-    // In production, this would come from project configuration
-    const baseDir = path.join(process.cwd(), 'projects', projectId);
+    // Use repositories directory structure
+    const workspaceBase = process.env.WORKSPACE_BASE_PATH || process.cwd();
+    const baseDir = path.join(workspaceBase, 'repositories', projectId);
     
     // Ensure directory exists
     try {
@@ -696,7 +697,7 @@ export class AIOrchestrator extends EventEmitter {
     // Close terminal session
     const sessionId = this.terminalSessions.get(projectId);
     if (sessionId) {
-      TerminalService.closeSession(sessionId);
+      // TerminalService.closeSession(sessionId); // TODO: Implement TerminalService
       this.terminalSessions.delete(projectId);
     }
 

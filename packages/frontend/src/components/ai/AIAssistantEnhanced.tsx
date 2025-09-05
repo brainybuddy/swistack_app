@@ -23,8 +23,10 @@ import {
   Pause,
   RotateCcw
 } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { AIService } from '../../services/AIService';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSocket } from '@/contexts/SocketContext';
 
 // Temporary type definitions until shared types are updated
 interface AIMessage {
@@ -82,33 +84,46 @@ export default function AIAssistantEnhanced({
   fileContent,
   className = ''
 }: AIAssistantEnhancedProps) {
+  const { token, httpClient } = useAuth();
+  const { socket, isConnected } = useSocket();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [providerInfo, setProviderInfo] = useState<any>(null);
+  const [agentStatus, setAgentStatus] = useState<{ ready: boolean; lastError?: string } | null>(null);
   const [actionProgress, setActionProgress] = useState<Map<string, ActionProgress>>(new Map());
   const [isExecuting, setIsExecuting] = useState(false);
   const [autoExecute, setAutoExecute] = useState(true);
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [agentConversationId, setAgentConversationId] = useState<string | null>(null);
-  const [useAgent, setUseAgent] = useState(false);
+  // Agent-only mode: no legacy fallback
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const aiService = AIService.getInstance();
+  const responseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const awaitingResponseRef = useRef(false);
 
-  // Initialize WebSocket connection
+  // Initialize WebSocket connection (agent-only). Wait until token is available.
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    
-    const socketInstance = io(process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001', {
-      auth: { token },
-      query: { projectId }
-    });
+    if (!token) return; // Avoid connecting with empty/undefined token
+
+    // Use the authenticated shared socket from SocketProvider
+    const socketInstance = socket;
+    if (!socketInstance) return;
 
     socketInstance.on('connect', () => {
       console.log('Connected to WebSocket');
+    });
+    socketInstance.on('connect_error', (error) => {
+      console.error('Socket connect_error:', (error as any)?.message);
+      setMessages(prev => [...prev, {
+        id: `conn-error-${Date.now()}`,
+        role: 'assistant',
+        content: `❌ Realtime connection failed: ${(error as any)?.message || 'Unknown error'}. Check NEXT_PUBLIC_API_URL and backend CORS (FRONTEND_URL).`,
+        timestamp: new Date(),
+        error: (error as any)?.message || 'connect_error'
+      }]);
     });
 
     socketInstance.on('ai:thinking', () => {
@@ -125,11 +140,16 @@ export default function AIAssistantEnhanced({
     });
 
     socketInstance.on('agent:stream', (data) => {
+      if (responseTimerRef.current) { clearTimeout(responseTimerRef.current); responseTimerRef.current = null; }
+      awaitingResponseRef.current = false;
       handleAgentStream(data);
     });
 
     socketInstance.on('agent:complete', () => {
       setIsLoading(false);
+      setIsExecuting(false);
+      if (responseTimerRef.current) { clearTimeout(responseTimerRef.current); responseTimerRef.current = null; }
+      awaitingResponseRef.current = false;
     });
 
     socketInstance.on('agent:error', (data) => {
@@ -141,6 +161,21 @@ export default function AIAssistantEnhanced({
         error: data.error
       }]);
       setIsLoading(false);
+      if (responseTimerRef.current) { clearTimeout(responseTimerRef.current); responseTimerRef.current = null; }
+      awaitingResponseRef.current = false;
+    });
+
+    socketInstance.on('ai:error', (data) => {
+      setMessages(prev => [...prev, {
+        id: `ai-error-${Date.now()}`,
+        role: 'assistant',
+        content: `❌ AI Error: ${data?.error || 'Unknown error'}`,
+        timestamp: new Date(),
+        error: data?.error
+      }]);
+      setIsLoading(false);
+      if (responseTimerRef.current) { clearTimeout(responseTimerRef.current); responseTimerRef.current = null; }
+      awaitingResponseRef.current = false;
     });
 
     socketInstance.on('ai:actionStarted', (event) => {
@@ -188,20 +223,54 @@ export default function AIAssistantEnhanced({
       console.log('Terminal output:', data);
     });
 
-    setSocket(socketInstance);
+    // No need to setSocket since we're using the shared socket from SocketProvider
 
     return () => {
-      socketInstance.disconnect();
+      // Clean up event listeners instead of disconnecting the shared socket
+      socketInstance.off('connect');
+      socketInstance.off('connect_error');
+      socketInstance.off('ai:thinking');
+      socketInstance.off('ai:response');
+      socketInstance.off('agent:thinking');
+      socketInstance.off('agent:stream');
+      socketInstance.off('ai:progress');
+      socketInstance.off('file:error');
+      socketInstance.off('file:updated');
+      socketInstance.off('ai:action:start');
+      socketInstance.off('ai:action:complete');
+      socketInstance.off('ai:action:error');
+      socketInstance.off('terminal:output');
     };
-  }, [projectId]);
+  }, [socket, projectId]);
 
   // Initialize conversation
   useEffect(() => {
     initializeConversation();
-    if (useAgent) {
-      initializeAgentConversation();
-    }
-  }, [projectId, useAgent]);
+    initializeAgentConversation();
+    // Fetch agent status to decide fallback
+    (async () => {
+      try {
+        const res = await fetch('/api/agent/status');
+        const json = await res.json();
+        if (json?.success && json?.data) {
+          setAgentStatus({ ready: json.data.ready, lastError: json.data.lastError });
+          if (!json.data.ready) {
+            setMessages(prev => ([
+              ...prev,
+              {
+                id: `agent-status-${Date.now()}`,
+                role: 'assistant',
+                content: `⚠️ Agent is not ready: ${json.data.lastError || 'Unavailable'}. Please try again shortly.`,
+                timestamp: new Date(),
+              }
+            ]));
+          }
+        }
+      } catch (e) {
+        // Ignore status errors; user can still use legacy mode
+      }
+    })();
+  }, [projectId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -219,8 +288,7 @@ export default function AIAssistantEnhanced({
       const welcomeMessage: ChatMessage = {
         id: `welcome-${Date.now()}`,
         role: 'assistant',
-        content: useAgent 
-          ? `🤖 **SwiStack Code Agent** at your service! I'm powered by advanced AI with these capabilities:
+        content: `🤖 **SwiStack Code Agent** at your service! I'm powered by advanced AI with these capabilities:
 
 • **Autonomous Development** - I can independently plan and execute complex coding tasks
 • **Live Preview Integration** - I can see your preview and make visual adjustments
@@ -228,16 +296,7 @@ export default function AIAssistantEnhanced({
 • **Command Execution** - Run terminal commands and scripts
 • **Real-time Feedback** - Stream responses and show progress live
 
-${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What coding challenge can I help you tackle?`
-          : `👋 Hi! I'm your enhanced AI coding assistant with **full execution capabilities**. I can:
-
-• **Execute Actions** - Automatically create, modify, and delete files
-• **Run Commands** - Execute terminal commands and see outputs
-• **Live Updates** - Show real-time progress of all operations
-• **Smart Context** - Understand your entire project structure
-• **Rollback** - Undo changes if something goes wrong
-
-${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What would you like me to help you with?`,
+${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What coding challenge can I help you tackle?`,
         timestamp: new Date(),
         metadata: {
           context: currentFile ? [currentFile] : [],
@@ -322,42 +381,105 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What wou
         return prev;
       });
     } else if (type === 'tool_result') {
-      // Update tool call with result
+      // Update tool call with result; if no agent message exists, create an NL summary
       setMessages(prev => {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.isAgentMessage && lastMessage.toolCalls) {
-          const updatedToolCalls = lastMessage.toolCalls.map(tc => 
-            tc.tool === streamData.tool 
+        const last = prev[prev.length - 1];
+        if (last && last.isAgentMessage && last.toolCalls) {
+          const updated = last.toolCalls.map(tc =>
+            tc.tool === (streamData.tool || tc.tool)
               ? { ...tc, result: streamData.result, status: 'completed' }
               : tc
           );
-          return prev.map((msg, index) => 
-            index === prev.length - 1 
-              ? { ...msg, toolCalls: updatedToolCalls }
-              : msg
-          );
+          return prev.map((m, i) => (i === prev.length - 1 ? { ...m, toolCalls: updated } : m));
         }
-        return prev;
+
+        // Natural language summaries per tool
+        const tool = (streamData.tool || 'result') as string;
+        const params = (streamData.parameters || {}) as any;
+        const res = streamData.result as any;
+        let content = '';
+        if (tool === 'count_files' && typeof res?.count === 'number') {
+          content = `I counted ${res.count} files in this project.`;
+        } else if (tool === 'list_tree' && Array.isArray(res)) {
+          const total = res.length;
+          const show = res.slice(0, 20).map((r: any) => `${r.path} (${r.type})`).join('\n');
+          content = `Here are ${Math.min(20, total)} of ${total} items in the project tree:\n\n${show}`;
+        } else if (tool === 'search_files' && Array.isArray(res)) {
+          const q = params?.query ? ` for "${params.query}"` : '';
+          const total = res.length;
+          const show = res.slice(0, 20).map((r: any) => r.path).join('\n');
+          content = `I found ${total} file(s)${q}. Here are ${Math.min(20, total)} example(s):\n\n${show}`;
+        } else if (tool === 'read_file' && typeof res?.path === 'string') {
+          const raw = typeof res?.content === 'string' ? res.content : JSON.stringify(res?.content);
+          const trimmed = raw && raw.length > 4000 ? raw.slice(0, 4000) + '\n...[truncated]' : raw || '';
+          content = `Here is the content of ${res.path}:\n\n${trimmed}`;
+        } else {
+          const pretty = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
+          content = pretty;
+        }
+
+        return [
+          ...prev,
+          {
+            id: `agent-${Date.now()}`,
+            role: 'assistant',
+            content,
+            timestamp: new Date(),
+            isAgentMessage: true,
+          } as ChatMessage,
+        ];
       });
     }
   };
 
-  const initializeAgentConversation = async () => {
+  const initializeAgentConversation = async (): Promise<string | null> => {
     try {
       const response = await fetch('/api/agent/conversations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': token ? `Bearer ${token}` : ''
         }
       });
       
       const data = await response.json();
       if (response.ok) {
         setAgentConversationId(data.conversationId);
+        return data.conversationId as string;
       }
     } catch (error) {
       console.error('Failed to initialize agent conversation:', error);
+    }
+    return null;
+  };
+
+  // Build a short project summary (file list + key files) to ground the agent
+  const buildProjectSummary = async (): Promise<string> => {
+    if (!projectId) return '';
+    try {
+      const treeRes = await httpClient.get(`/api/files/projects/${projectId}/tree`);
+      if (!treeRes.success || !(treeRes as any)?.data?.files) return '';
+      const files: Array<{ path: string; type: 'file' | 'directory' }>= (treeRes as any).data.files;
+      const total = files.length;
+      const topLevel = Array.from(new Set(files.map(f => f.path.split('/')[0]))).slice(0, 20);
+
+      const keyFiles = ['README.md', 'package.json', 'tsconfig.json', 'next.config.js'];
+      const contents: string[] = [];
+      for (const k of keyFiles) {
+        const found = files.find(f => f.path.toLowerCase() === k.toLowerCase());
+        if (!found) continue;
+        const safePath = found.path.split('/').map(encodeURIComponent).join('/');
+        const fcRes = await httpClient.get(`/api/files/projects/${projectId}/files/${safePath}`);
+        if ((fcRes as any)?.success && (fcRes as any)?.data?.file?.content) {
+          const raw = (fcRes as any).data.file.content as string;
+          const trimmed = raw.length > 3000 ? raw.slice(0, 3000) + '\n...[truncated]' : raw;
+          contents.push(`---- ${found.path} ----\n${trimmed}`);
+        }
+      }
+      const header = `PROJECT FILES: ${total}\nTOP-LEVEL: ${topLevel.join(', ')}`;
+      return [header, ...contents].join('\n\n');
+    } catch {
+      return '';
     }
   };
 
@@ -378,62 +500,60 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What wou
     setIsExecuting(autoExecute);
 
     try {
-      if (useAgent && agentConversationId && socket && socket.connected) {
-        // Use Mistral Agent
-        socket.emit('agent:message', {
-          conversationId: agentConversationId,
-          message: messageText
-        });
-      } else if (socket && socket.connected) {
-        // Use legacy orchestrator
-        socket.emit('ai:chat', {
-          projectId,
-          message: messageText,
-          conversationId,
-          options: {
-            includeProjectContext: true,
-            includeFileContext: !!currentFile,
-            currentFile,
-            selectedCode,
-            autoExecute
-          }
-        });
-      } else {
-        // Fallback to HTTP API
-        const response = await fetch('/api/ai/chat/orchestrated', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          },
-          body: JSON.stringify({
-            projectId,
-            message: messageText,
-            conversationId,
-            options: {
-              includeProjectContext: true,
-              includeFileContext: !!currentFile,
-              currentFile,
-              selectedCode,
-              autoExecute
-            }
-          })
-        });
-
-        const data = await response.json();
-        if (data.success) {
-          handleAIResponse(data.data);
-        } else {
-          throw new Error(data.error);
-        }
+      if (!socket || !socket.connected) {
+        throw new Error('Realtime connection unavailable. Please refresh the page or check NEXT_PUBLIC_API_URL.');
       }
+
+      let convId = agentConversationId;
+      if (!convId) {
+        convId = await initializeAgentConversation();
+      }
+      if (!convId) {
+        throw new Error('Agent conversation could not be started. Is the backend agent active?');
+      }
+      // Build contextual message to improve agent responses
+      const MAX_CONTEXT_CHARS = 5000;
+      let context = `Project ID: ${projectId}`;
+      if (currentFile) context += `\nActive File: ${currentFile}`;
+      if (fileContent) {
+        const trimmed = fileContent.length > MAX_CONTEXT_CHARS
+          ? fileContent.slice(0, MAX_CONTEXT_CHARS) + "\n...[truncated]"
+          : fileContent;
+        context += `\nActive File Content (truncated if needed):\n\n${trimmed}`;
+      }
+      // Append project summary
+      const summary = await buildProjectSummary();
+      if (summary) {
+        const cap = summary.length > 6000 ? summary.slice(0, 6000) + '\n...[truncated]' : summary;
+        context += `\n\nPROJECT SUMMARY (truncated):\n${cap}`;
+      }
+      const finalMessage = `[[CONTEXT]]\n${context}\n[[/CONTEXT]]\n\n${messageText}`;
+
+      // Start a timeout to surface no-response conditions
+      if (responseTimerRef.current) clearTimeout(responseTimerRef.current);
+      awaitingResponseRef.current = true;
+      responseTimerRef.current = setTimeout(() => {
+        if (!awaitingResponseRef.current) return;
+        setMessages(prev => [...prev, {
+          id: `timeout-${Date.now()}`,
+          role: 'assistant',
+          content: '⏳ No response yet from the agent. Check /api/agent/status and socket connection.',
+          timestamp: new Date()
+        }]);
+      }, 20000);
+
+      socket.emit('agent:message', { conversationId: convId, message: finalMessage });
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Unknown error';
+      const statusHint = agentStatus && agentStatus.ready === false
+        ? ` Agent status: ${agentStatus.lastError || 'Unavailable'}.`
+        : '';
       setMessages(prev => [...prev, {
         id: `error-${Date.now()}`,
         role: 'assistant',
-        content: '❌ Sorry, I encountered an error. Please try again.',
+        content: `❌ ${errMsg}.${statusHint} Check /api/agent/status and server logs.`,
         timestamp: new Date(),
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: errMsg
       }]);
       setIsLoading(false);
       setIsExecuting(false);
@@ -543,6 +663,50 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What wou
     );
   };
 
+  const handleRetry = async () => {
+    try {
+      // Attempt socket reconnect if not connected
+      if (socket && !socket.connected) {
+        socket.connect();
+      }
+
+      // Refresh agent status
+      const res = await fetch('/api/agent/status');
+      const json = await res.json();
+      if (json?.success && json?.data) {
+        setAgentStatus({ ready: json.data.ready, lastError: json.data.lastError });
+        setMessages(prev => [...prev, {
+          id: `status-${Date.now()}`,
+          role: 'assistant',
+          content: `🔎 Agent status: ${json.data.ready ? 'ready' : 'not ready'}${json.data.lastError ? ` — ${json.data.lastError}` : ''}. Socket: ${socket?.connected ? 'connected' : 'disconnected'}.`,
+          timestamp: new Date()
+        }]);
+
+        // Initialize conversation if agent is ready and we don't have one
+        if (json.data.ready && !agentConversationId) {
+          const convId = await initializeAgentConversation();
+          if (convId) {
+            setMessages(prev => [...prev, {
+              id: `conv-${Date.now()}`,
+              role: 'assistant',
+              content: '✅ Agent conversation initialized. You can continue.',
+              timestamp: new Date()
+            }]);
+          }
+        }
+      } else {
+        throw new Error(json?.error || 'Failed to fetch agent status');
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: `retry-error-${Date.now()}`,
+        role: 'assistant',
+        content: `❌ Retry failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        timestamp: new Date()
+      }]);
+    }
+  };
+
   return (
     <div className={`bg-gray-900 border-l border-gray-700 flex flex-col ${className}`}>
       {/* Header */}
@@ -552,28 +716,30 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What wou
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h2 className="font-semibold text-white">
-              {useAgent ? 'SwiStack Code Agent' : 'Autonomous Agent'}
-            </h2>
+            <h2 className="font-semibold text-white">SwiStack Code Agent</h2>
             {providerInfo && (
-              <p className="text-xs text-gray-400">
-                {useAgent ? 'Mistral Codestral' : providerInfo.currentProvider} • {isExecuting ? 'Executing...' : 'Ready'}
-              </p>
+              <p className="text-xs text-gray-400">Mistral • {isExecuting ? 'Executing...' : 'Ready'}</p>
+            )}
+            {agentStatus && !agentStatus.ready && (
+              <p className="text-xs text-yellow-400 mt-1">Agent unavailable: {agentStatus.lastError || 'Unknown issue'}</p>
             )}
           </div>
         </div>
         <div className="flex items-center space-x-2">
+          {/* Connection indicator */}
+          <div className="flex items-center space-x-1 mr-2">
+            <span className={`inline-block w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
+            <span className={`text-xs ${isConnected ? 'text-green-400' : 'text-gray-400'}`}>{isConnected ? 'Connected' : 'Offline'}</span>
+          </div>
+          {/* Retry button */}
           <button
-            onClick={() => setUseAgent(!useAgent)}
-            className={`px-3 py-1 text-xs rounded-lg transition-colors ${
-              useAgent 
-                ? 'bg-purple-600 text-white' 
-                : 'bg-gray-800 text-gray-400 hover:text-white'
-            }`}
-            title="Toggle between Mistral Agent and legacy orchestrator"
+            onClick={handleRetry}
+            className="px-2 py-1 text-xs rounded-lg bg-gray-800 text-gray-300 hover:text-white hover:bg-gray-700"
+            title="Retry connection and check agent status"
           >
-            {useAgent ? '🤖 Agent Mode' : '🧠 Legacy Mode'}
+            Retry
           </button>
+          {/* Agent-only mode: no legacy toggle */}
           <button
             onClick={() => setAutoExecute(!autoExecute)}
             className={`px-3 py-1 text-xs rounded-lg transition-colors ${

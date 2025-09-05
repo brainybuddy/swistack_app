@@ -12,9 +12,32 @@ export interface PreviewState {
 
 export class LivePreviewIntegration {
   private previewStates: Map<string, PreviewState> = new Map();
+  private isInitialized = false;
 
   constructor() {
-    this.setupPreviewMonitoring();
+    // Defer WebSocket setup until it's available
+    this.deferredSetup();
+  }
+
+  private deferredSetup() {
+    // Try to setup WebSocket monitoring after a delay
+    setTimeout(() => {
+      try {
+        this.setupPreviewMonitoring();
+        this.isInitialized = true;
+      } catch (error) {
+        console.log('WebSocket not ready yet, will retry...');
+        // Retry after another delay
+        setTimeout(() => {
+          try {
+            this.setupPreviewMonitoring();
+            this.isInitialized = true;
+          } catch (e) {
+            console.log('WebSocket setup deferred - will initialize when first needed');
+          }
+        }, 5000);
+      }
+    }, 1000);
   }
 
   private setupPreviewMonitoring() {
@@ -55,6 +78,16 @@ export class LivePreviewIntegration {
     wsService['io'].to(`project:${projectId}`).emit('preview:updated', state);
   }
 
+  // Public method to get preview state for AI analysis
+  getPreviewState(projectId: string): PreviewState | null {
+    return this.previewStates.get(projectId) || null;
+  }
+
+  // Get all active preview states
+  getAllPreviewStates(): Map<string, PreviewState> {
+    return this.previewStates;
+  }
+
   private handleConsoleMessage(projectId: string, message: string, type: 'log' | 'warn' | 'error') {
     const state = this.previewStates.get(projectId);
     if (state) {
@@ -80,12 +113,6 @@ export class LivePreviewIntegration {
     }
   }
 
-  /**
-   * Get current preview state for a project
-   */
-  getPreviewState(projectId: string): PreviewState | null {
-    return this.previewStates.get(projectId) || null;
-  }
 
   /**
    * Capture preview screenshot for agent analysis

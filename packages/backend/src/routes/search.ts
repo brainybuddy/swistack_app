@@ -129,9 +129,8 @@ router.post('/projects/:projectId/search', authenticateToken, async (req: Reques
       maxResults = 100
     } = options;
 
-    // In a real implementation, you would get the project directory from the database
-    // For now, we'll use a mock project directory structure
-    const projectDir = `/tmp/projects/${projectId}`;
+    // Use current working directory as the project directory
+    const projectDir = process.cwd();
     
     let searchQuery = query;
     if (!caseSensitive && !regex) {
@@ -207,8 +206,8 @@ router.post('/projects/:projectId/find-files', authenticateToken, async (req: Re
       maxResults = 50
     } = options;
 
-    // In a real implementation, you would get the project directory from the database
-    const projectDir = `/tmp/projects/${projectId}`;
+    // Use current working directory as the project directory
+    const projectDir = process.cwd();
     
     const allFiles = await getAllFiles(projectDir);
     const results: FileResult[] = [];
@@ -271,8 +270,8 @@ router.get('/projects/:projectId/files/:filePath/symbols', authenticateToken, as
   try {
     const { projectId, filePath } = req.params;
     
-    // In a real implementation, you would get the actual file path from the database
-    const actualFilePath = `/tmp/projects/${projectId}/${filePath}`;
+    // Use current working directory and join with the requested file path
+    const actualFilePath = path.join(process.cwd(), filePath);
     
     const content = await fs.readFile(actualFilePath, 'utf-8');
     const lines = content.split('\n');
@@ -406,7 +405,7 @@ router.post('/projects/:projectId/quick-search', authenticateToken, async (req: 
       });
     }
 
-    const projectDir = `/tmp/projects/${projectId}`;
+    const projectDir = process.cwd();
     
     // Search for files
     const allFiles = await getAllFiles(projectDir);

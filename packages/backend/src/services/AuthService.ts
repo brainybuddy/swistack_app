@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { UserModel, DatabaseUser } from '../models/User';
 import { RefreshTokenModel } from '../models/RefreshToken';
-import { authConfig } from '../config/auth';
+import { getAuthConfig } from '../config/auth';
 import { 
   LoginRequest, 
   RegisterRequest, 
@@ -20,6 +20,10 @@ export class AuthService {
       type: 'access',
     };
 
+    const authConfig = getAuthConfig();
+    console.log('AuthService JWT secret length:', (authConfig.jwt.secret as string)?.length);
+    console.log('AuthService JWT secret starts with:', (authConfig.jwt.secret as string)?.substring(0, 50) + '...');
+
     return jwt.sign(payload, authConfig.jwt.secret as string, {
       expiresIn: authConfig.jwt.accessTokenExpiry as string,
     } as jwt.SignOptions);
@@ -29,6 +33,7 @@ export class AuthService {
     const accessToken = this.generateAccessToken(user);
     
     // Calculate expiry times
+    const authConfig = getAuthConfig();
     const accessExpiryMs = this.getTokenExpiryTime(authConfig.jwt.accessTokenExpiry);
     const refreshExpiryMs = this.getTokenExpiryTime(authConfig.jwt.refreshTokenExpiry);
     
@@ -119,6 +124,7 @@ export class AuthService {
 
   static async verifyAccessToken(token: string): Promise<DatabaseUser> {
     try {
+      const authConfig = getAuthConfig();
       const decoded = jwt.verify(token, authConfig.jwt.secret) as JWTPayload;
       
       if (decoded.type !== 'access') {

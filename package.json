@@ -63,6 +63,7 @@
   },
   "dependencies": {
     "@types/socket.io": "^3.0.1",
+    "node-fetch": "^3.3.2",
     "socket.io": "^4.8.1"
   }
 }

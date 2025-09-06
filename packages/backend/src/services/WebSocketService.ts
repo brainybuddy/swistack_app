@@ -102,140 +102,44 @@ export class WebSocketService {
           // Send typing indicator
           socket.emit('agent:thinking', { conversationId });
 
-          // Deterministic tool usage for codebase queries (search/read/count/list)
+          // Use QueryRouter for deterministic RAG handling
           try {
-            const lower = (message || '').toLowerCase().trim();
-            let forcedTool: { tool: 'count_files'|'list_tree'|'read_file'|'search_files'; params?: any } | null = null;
-            if (/\b(how many files|file count|count files)\b/.test(lower)) {
-              forcedTool = { tool: 'count_files' };
-            } else if (/\b(list (files|tree)|show files)\b/.test(lower)) {
-              forcedTool = { tool: 'list_tree' };
-            } else if (/\b(search|find)\b/.test(lower)) {
-              const m = message.match(/(?:search|find)(?:\s+for)?\s+(.+)/i);
-              const query = m ? m[1].trim().replace(/[.?!]$/, '') : '';
-              if (query) forcedTool = { tool: 'search_files', params: { query } };
-            } else if (/\b(read|open|show)\b/i.test(message)) {
-              const pm = message.match(/[\w./-]+\.(?:js|jsx|ts|tsx|json|md|css|html|cjs|mjs)/i);
-              if (pm) forcedTool = { tool: 'read_file', params: { path: pm[0] } };
-            }
-
-            if (forcedTool && projectId) {
-              const { ProjectFileModel } = await import('../models/ProjectFile');
-              const { storageService } = await import('../services/StorageService');
-              const { projectFileSystem } = await import('../services/ProjectFileSystem');
-              // Ensure project is initialized for filesystem fallback
-              try { await projectFileSystem.initializeProject(projectId, {}); } catch {}
-              let result: any = null;
-              switch (forcedTool.tool) {
-                case 'count_files': {
-                  const all = await ProjectFileModel.getProjectTree(projectId);
-                  if (all.length > 0) {
-                    result = { count: all.length };
-                  } else {
-                    const filesFs = await projectFileSystem.searchFiles(projectId, '', { maxResults: 10000 });
-                    result = { count: filesFs.length };
+            const { QueryRouter } = await import('./ai/QueryRouter');
+            
+            if (QueryRouter.shouldUseRAG(message) && projectId) {
+              const ragResult = await QueryRouter.routeRAGQuery(message, projectId);
+              
+              if (ragResult.success && ragResult.data) {
+                // Format RAG response for user display
+                const formattedResponse = QueryRouter.formatRAGResponse(ragResult.data);
+                
+                // Send formatted response as message
+                socket.emit('agent:stream', {
+                  conversationId,
+                  type: 'message',
+                  data: {
+                    role: 'assistant',
+                    content: formattedResponse,
+                    timestamp: new Date(),
                   }
-                  break;
-                }
-                case 'list_tree': {
-                  const all = await ProjectFileModel.getProjectTree(projectId);
-                  const topLevelOnly = /top[- ]?level/.test(lower);
-                  if (topLevelOnly) {
-                    const set = new Set<string>();
-                    const list: any[] = [];
-                    for (const f of all) {
-                      const root = (f.path || '').split('/')[0];
-                      if (root && !set.has(root)) {
-                        set.add(root);
-                        const isDir = all.some(x => x.path.startsWith(root + '/'));
-                        list.push({ path: root, type: isDir ? 'directory' : 'file' });
-                      }
-                    }
-                    result = list;
-                  } else if (all.length > 0) {
-                    result = all.map(f => ({ path: f.path, type: f.type }));
-                  } else {
-                    // Fallback: list files from filesystem (files only)
-                    const filesFs = await projectFileSystem.searchFiles(projectId, '', { maxResults: 2000 });
-                    result = filesFs.map(f => ({ path: f.path, type: 'file' }));
+                });
+                
+                // Also send tool result for debugging
+                socket.emit('agent:stream', {
+                  conversationId,
+                  type: 'tool_result',
+                  data: { 
+                    tool: ragResult.data.type, 
+                    parameters: { query: ragResult.data.query }, 
+                    result: ragResult.data.result, 
+                    timestamp: new Date() 
                   }
-                  break;
-                }
-                case 'search_files': {
-                  const q = (forcedTool.params?.query as string) || '';
-                  const qLower = q.toLowerCase().trim();
-                  const score = (p: string, n: string) => {
-                    const name = (n || '').toLowerCase();
-                    const pathStr = (p || '').toLowerCase();
-                    if (name === qLower) return 100;
-                    if (pathStr === qLower) return 95;
-                    if (pathStr.endsWith('/' + qLower)) return 90;
-                    if (name.includes(qLower)) return 80;
-                    if (pathStr.includes('/' + qLower)) return 70;
-                    if (pathStr.includes(qLower)) return 60;
-                    return 10; // likely content-only match
-                  };
-                  const byPath = new Map<string, { path: string; name: string; s: number }>();
-                  // DB search first
-                  const dbMatches = await ProjectFileModel.searchFiles(projectId, q, 500);
-                  for (const m of dbMatches || []) {
-                    const s = score(m.path, m.name);
-                    const prev = byPath.get(m.path);
-                    if (!prev || s > prev.s) byPath.set(m.path, { path: m.path, name: m.name, s });
-                  }
-                  // If no strong matches, augment with filesystem results
-                  const maxDbScore = Math.max(0, ...Array.from(byPath.values()).map(v => v.s));
-                  if (maxDbScore < 60) {
-                    const filesFs = await projectFileSystem.searchFiles(projectId, q, { maxResults: 1000 });
-                    for (const f of filesFs) {
-                      const name = f.path.split('/').pop() || f.path;
-                      const s = score(f.path, name);
-                      const prev = byPath.get(f.path);
-                      if (!prev || s > prev.s) byPath.set(f.path, { path: f.path, name, s });
-                    }
-                  }
-                  // Sort by score desc, then path asc
-                  const sorted = Array.from(byPath.values()).sort((a,b) => b.s - a.s || a.path.localeCompare(b.path)).slice(0, 200);
-                  result = sorted.map(v => ({ path: v.path, name: v.name }));
-                  break;
-                }
-                case 'read_file': {
-                  const p = forcedTool.params?.path as string;
-                  let file = await ProjectFileModel.findByPath(projectId, p);
-                  if (!file) {
-                    // Try by basename when exact path isn't found
-                    const pathMod = await import('path');
-                    const base = pathMod.basename(p);
-                    const candidates = await ProjectFileModel.searchFiles(projectId, base, 5);
-                    file = candidates.find(c => c.path.endsWith('/' + base) || c.path === base) || candidates[0];
-                  }
-                  if (file) {
-                    let content = file.content || '';
-                    if (!content && file.storageKey) {
-                      const buf = await storageService.downloadFile(file.storageKey);
-                      content = buf.toString(file.encoding as BufferEncoding);
-                    }
-                    result = { path: file.path, content };
-                  } else {
-                    // Fallback: read from filesystem
-                    try {
-                      const content = await projectFileSystem.readFile(projectId, p);
-                      result = { path: p, content };
-                    } catch (e) {
-                      throw new Error('File not found');
-                    }
-                  }
-                  break;
-                }
+                });
+                
+                socket.emit('agent:complete', { conversationId });
+                return; // Skip LLM stream
               }
-
-              socket.emit('agent:stream', {
-                conversationId,
-                type: 'tool_result',
-                data: { tool: forcedTool.tool, parameters: forcedTool.params || {}, result, timestamp: new Date() }
-              });
-              socket.emit('agent:complete', { conversationId });
-              return; // Skip LLM stream
+              // If RAG failed but should have been used, still try LLM as fallback
             }
           } catch (detErr) {
             console.error('[WS][agent:message] Deterministic tool failed:', detErr);
@@ -322,40 +226,21 @@ export class WebSocketService {
                   }
                   case 'search_files': {
                     const q = (params?.query as string) || '';
-                    const qLower = q.toLowerCase().trim();
-                    const score = (p: string, n: string) => {
-                      const name = (n || '').toLowerCase();
-                      const pathStr = (p || '').toLowerCase();
-                      if (name === qLower) return 100;
-                      if (pathStr === qLower) return 95;
-                      if (pathStr.endsWith('/' + qLower)) return 90;
-                      if (name.includes(qLower)) return 80;
-                      if (pathStr.includes('/' + qLower)) return 70;
-                      if (pathStr.includes(qLower)) return 60;
-                      return 10;
-                    };
-                    const byPath = new Map<string, { path: string; name: string; s: number }>();
+                    const pathMod = await import('path');
+                    const base = pathMod.basename(q.trim());
                     const { ProjectFileModel } = await import('../models/ProjectFile');
-                    const dbMatches = await ProjectFileModel.searchFiles(projectId, q, 500);
-                    for (const m of dbMatches || []) {
-                      const s = score(m.path, m.name);
-                      const prev = byPath.get(m.path);
-                      if (!prev || s > prev.s) byPath.set(m.path, { path: m.path, name: m.name, s });
+                    // 1) Exact filename
+                    let matches = await ProjectFileModel.searchByExactName(projectId, base, 200);
+                    if (!matches || matches.length === 0) {
+                      // 2) Partial filename/path
+                      matches = await ProjectFileModel.searchByName(projectId, base, 200);
                     }
-                    const maxDbScore = Math.max(0, ...Array.from(byPath.values()).map(v => v.s));
-                    if (maxDbScore < 60) {
-                      const { projectFileSystem } = await import('../services/ProjectFileSystem');
-                      try { await projectFileSystem.initializeProject(projectId, {}); } catch {}
-                      const filesFs = await projectFileSystem.searchFiles(projectId, q, { maxResults: 1000 });
-                      for (const f of filesFs) {
-                        const name = f.path.split('/').pop() || f.path;
-                        const s = score(f.path, name);
-                        const prev = byPath.get(f.path);
-                        if (!prev || s > prev.s) byPath.set(f.path, { path: f.path, name, s });
-                      }
+                    if (!matches || matches.length === 0) {
+                      // 3) Content search
+                      matches = await ProjectFileModel.searchByContent(projectId, q, 200);
                     }
-                    const sorted = Array.from(byPath.values()).sort((a,b) => b.s - a.s || a.path.localeCompare(b.path)).slice(0, 200);
-                    result = sorted.map(v => ({ path: v.path, name: v.name }));
+                    // Return database results only (no filesystem fallback)
+                    result = matches ? matches.map(m => ({ path: m.path, name: m.name, content: m.content })) : [];
                     break;
                   }
                 }
@@ -364,7 +249,7 @@ export class WebSocketService {
                   socket.emit('agent:stream', {
                     conversationId,
                     type: 'tool_result',
-                    data: { tool, result, timestamp: new Date() }
+                    data: { tool, parameters: params || {}, result, timestamp: new Date() }
                   });
                   continue; // Skip forwarding the original tool_call chunk
                 }

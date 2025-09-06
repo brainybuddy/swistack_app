@@ -3,6 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { swiStackMcpToolsServer } from './McpToolsServer';
+import { ConversationModel, MessageModel, DatabaseConversation, DatabaseMessage } from '../../models/Conversation';
 
 export interface AgentMessage {
   id: string;
@@ -169,23 +170,31 @@ Always prioritize code quality, security best practices, and user experience.`,
     }
   }
 
-  async createConversation(userId: string): Promise<string> {
+  async createConversation(userId: string, projectId?: string): Promise<string> {
     if (!this.ready || !this.agentId) {
       throw new Error(this.lastError || 'Agent not initialized');
     }
-    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     
+    // Create conversation in database
+    const dbConversation = await ConversationModel.create({
+      userId,
+      projectId,
+      agentId: this.agentId!,
+      title: null, // Will be auto-generated from first message
+    });
+    
+    // Also keep in memory for immediate access
     const conversation: AgentConversation = {
-      id: conversationId,
+      id: dbConversation.id,
       agentId: this.agentId!,
       userId,
       messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: dbConversation.createdAt,
+      updatedAt: dbConversation.updatedAt,
     };
 
-    this.conversations.set(conversationId, conversation);
-    return conversationId;
+    this.conversations.set(dbConversation.id, conversation);
+    return dbConversation.id;
   }
 
   async sendMessage(conversationId: string, userMessage: string, projectId?: string): Promise<AsyncGenerator<any, void, unknown>> {
@@ -193,7 +202,11 @@ Always prioritize code quality, security best practices, and user experience.`,
       throw new Error(this.lastError || 'Agent not initialized');
     }
 
-    const conversation = this.conversations.get(conversationId);
+    // Try to get conversation from memory, or load from database
+    let conversation = this.conversations.get(conversationId);
+    if (!conversation) {
+      conversation = await this.loadConversationFromDb(conversationId);
+    }
     if (!conversation) {
       throw new Error('Conversation not found');
     }
@@ -209,19 +222,25 @@ Always prioritize code quality, security best practices, and user experience.`,
     conversation.messages.push(userMsg);
     conversation.updatedAt = new Date();
 
+    // Save user message to database
+    await this.saveMessage(conversationId, userMsg);
+
     // Set project context for MCP tools if projectId is provided
     if (projectId) {
       await this.setProjectContext(projectId);
     }
 
     try {
-      // Start conversation with Mistral agent
+      // Prepare conversation history for Mistral agent
+      const mistralMessages = conversation.messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+      // Start conversation with Mistral agent using full conversation history
       const conversationResult = await this.client.beta.conversations.startStream({
         agentId: this.agentId,
-        messages: [{
-          role: 'user',
-          content: userMessage,
-        }],
+        messages: mistralMessages,
         inputs: userMessage // Add the required inputs parameter
       } as any);
 
@@ -290,6 +309,9 @@ Always prioritize code quality, security best practices, and user experience.`,
         
         conversation.messages.push(assistantMsg);
         conversation.updatedAt = new Date();
+
+        // Save assistant message to database
+        await this.saveMessage(conversationId, assistantMsg);
       }
     } catch (error) {
       console.error('Error in streaming response:', error);
@@ -310,6 +332,65 @@ Always prioritize code quality, security best practices, and user experience.`,
   getConversationHistory(conversationId: string): AgentMessage[] {
     const conversation = this.conversations.get(conversationId);
     return conversation ? conversation.messages : [];
+  }
+
+  async loadConversationFromDb(conversationId: string): Promise<AgentConversation | null> {
+    try {
+      const dbConversation = await ConversationModel.findById(conversationId);
+      if (!dbConversation) return null;
+
+      const dbMessages = await MessageModel.findByConversation(conversationId);
+      
+      const agentMessages: AgentMessage[] = dbMessages.map(msg => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.created_at,
+        toolCalls: msg.toolCalls,
+      }));
+
+      const conversation: AgentConversation = {
+        id: dbConversation.id,
+        agentId: dbConversation.agent_id || this.agentId!,
+        userId: dbConversation.user_id,
+        messages: agentMessages,
+        createdAt: dbConversation.created_at,
+        updatedAt: dbConversation.updated_at,
+      };
+
+      // Cache in memory for performance
+      this.conversations.set(conversationId, conversation);
+      return conversation;
+    } catch (error) {
+      console.error('Error loading conversation from database:', error);
+      return null;
+    }
+  }
+
+  async saveMessage(conversationId: string, message: AgentMessage): Promise<void> {
+    try {
+      await MessageModel.create({
+        conversationId,
+        role: message.role,
+        content: message.content,
+        toolCalls: message.toolCalls,
+        metadata: { timestamp: message.timestamp },
+      });
+
+      // Update conversation timestamp
+      await ConversationModel.update(conversationId, { updated_at: new Date() });
+    } catch (error) {
+      console.error('Error saving message to database:', error);
+    }
+  }
+
+  async getUserConversations(userId: string, projectId?: string): Promise<DatabaseConversation[]> {
+    try {
+      return await ConversationModel.findByUser(userId, projectId);
+    } catch (error) {
+      console.error('Error getting user conversations:', error);
+      return [];
+    }
   }
 
   getStatus() {

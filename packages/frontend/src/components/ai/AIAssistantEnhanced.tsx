@@ -245,8 +245,19 @@ export default function AIAssistantEnhanced({
 
   // Initialize conversation
   useEffect(() => {
-    initializeConversation();
-    initializeAgentConversation();
+    const initializeChat = async () => {
+      // Try to load existing conversations first
+      const existingConvId = await loadExistingConversations();
+      
+      if (!existingConvId) {
+        // No existing conversation, create new one and show welcome message
+        initializeConversation();
+        initializeAgentConversation();
+      }
+    };
+
+    initializeChat();
+
     // Fetch agent status to decide fallback
     (async () => {
       try {
@@ -432,6 +443,56 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What cod
     }
   };
 
+  const loadExistingConversations = async (): Promise<string | null> => {
+    try {
+      const response = await fetch(`/api/agent/conversations?projectId=${projectId}`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+      
+      const data = await response.json();
+      if (response.ok && data.conversations?.length > 0) {
+        // Get the most recent conversation for this project
+        const recentConversation = data.conversations[0];
+        setAgentConversationId(recentConversation.id);
+        
+        // Load conversation history
+        await loadConversationHistory(recentConversation.id);
+        return recentConversation.id;
+      }
+    } catch (error) {
+      console.error('Failed to load existing conversations:', error);
+    }
+    return null;
+  };
+
+  const loadConversationHistory = async (conversationId: string): Promise<void> => {
+    try {
+      const response = await fetch(`/api/agent/conversations/${conversationId}/messages`, {
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        }
+      });
+      
+      const data = await response.json();
+      if (response.ok && data.messages?.length > 0) {
+        const chatMessages: ChatMessage[] = data.messages.map((msg: any) => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: new Date(msg.timestamp || msg.createdAt),
+          isAgentMessage: msg.role === 'assistant',
+          toolCalls: msg.toolCalls
+        }));
+        
+        setMessages(chatMessages);
+      }
+    } catch (error) {
+      console.error('Failed to load conversation history:', error);
+    }
+  };
+
   const initializeAgentConversation = async (): Promise<string | null> => {
     try {
       const response = await fetch('/api/agent/conversations', {
@@ -439,7 +500,8 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What cod
         headers: {
           'Content-Type': 'application/json',
           'Authorization': token ? `Bearer ${token}` : ''
-        }
+        },
+        body: JSON.stringify({ projectId })
       });
       
       const data = await response.json();
@@ -663,6 +725,33 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What cod
     );
   };
 
+  const startNewConversation = async () => {
+    try {
+      // Create new conversation
+      const newConvId = await initializeAgentConversation();
+      if (newConvId) {
+        // Clear current messages and show welcome
+        setMessages([]);
+        initializeConversation();
+        
+        setMessages(prev => [...prev, {
+          id: `new-conv-${Date.now()}`,
+          role: 'assistant',
+          content: '🆕 Started a new conversation! How can I help you today?',
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error('Failed to start new conversation:', error);
+      setMessages(prev => [...prev, {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: '❌ Failed to start new conversation. Please try again.',
+        timestamp: new Date()
+      }]);
+    }
+  };
+
   const handleRetry = async () => {
     try {
       // Attempt socket reconnect if not connected
@@ -731,6 +820,14 @@ ${currentFile ? `I can see you're working on \`${currentFile}\`.` : ''} What cod
             <span className={`inline-block w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
             <span className={`text-xs ${isConnected ? 'text-green-400' : 'text-gray-400'}`}>{isConnected ? 'Connected' : 'Offline'}</span>
           </div>
+          {/* New Chat button */}
+          <button
+            onClick={startNewConversation}
+            className="px-3 py-1 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            title="Start a new conversation"
+          >
+            New Chat
+          </button>
           {/* Retry button */}
           <button
             onClick={handleRetry}

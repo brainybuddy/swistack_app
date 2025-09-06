@@ -201,6 +201,51 @@ export class ProjectFileModel {
       .orderBy('name');
   }
 
+  // Name-first search helpers for RAG-style queries
+  static async searchByExactName(
+    projectId: string,
+    fileName: string,
+    limit: number = 50
+  ): Promise<DatabaseProjectFile[]> {
+    const nameLower = fileName.toLowerCase();
+    return await db('project_files')
+      .where('projectId', projectId)
+      .andWhere('type', 'file')
+      .andWhereRaw('LOWER(name) = ?', [nameLower])
+      .limit(limit)
+      .orderBy('path');
+  }
+
+  static async searchByName(
+    projectId: string,
+    nameTerm: string,
+    limit: number = 50
+  ): Promise<DatabaseProjectFile[]> {
+    return await db('project_files')
+      .where('projectId', projectId)
+      .andWhere('type', 'file')
+      .andWhere(function() {
+        this.whereILike('name', `%${nameTerm}%`)
+          .orWhereILike('path', `%/${nameTerm}`)
+          .orWhereILike('path', `%/${nameTerm}%`);
+      })
+      .limit(limit)
+      .orderBy('name');
+  }
+
+  static async searchByContent(
+    projectId: string,
+    term: string,
+    limit: number = 50
+  ): Promise<DatabaseProjectFile[]> {
+    return await db('project_files')
+      .where({ projectId })
+      .andWhere('type', 'file')
+      .andWhereILike('content', `%${term}%`)
+      .limit(limit)
+      .orderBy('name');
+  }
+
   static async getFilesByType(
     projectId: string,
     mimeType: string

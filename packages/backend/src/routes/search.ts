@@ -1,32 +1,37 @@
 import express, { Request, Response } from 'express';
 import { authenticateToken } from '../middleware/auth';
-import { promises as fs } from 'fs';
+import { ProjectFileModel } from '../models/ProjectFile';
 import path from 'path';
 
 const router = express.Router();
 
 interface SearchResult {
   file: string;
+  path: string;
   line: number;
   column: number;
   content: string;
   preview: string;
   match: string;
+  fileId: string;
 }
 
 interface FileResult {
+  id: string;
   path: string;
   name: string;
   type: 'file' | 'directory';
   size?: number;
   modified?: Date;
+  mimeType?: string;
 }
 
-// Search in file content
-async function searchInFile(filePath: string, query: string, isRegex: boolean = false): Promise<SearchResult[]> {
+// Search in database file content
+async function searchInFileContent(fileContent: string, filePath: string, fileId: string, query: string, isRegex: boolean = false): Promise<SearchResult[]> {
   try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    const lines = content.split('\n');
+    if (!fileContent) return [];
+    
+    const lines = fileContent.split('\n');
     const results: SearchResult[] = [];
 
     const searchPattern = isRegex ? new RegExp(query, 'gi') : query.toLowerCase();
@@ -56,6 +61,8 @@ async function searchInFile(filePath: string, query: string, isRegex: boolean = 
         if (match.index !== undefined) {
           results.push({
             file: filePath,
+            path: filePath,
+            fileId: fileId,
             line: lineIndex + 1,
             column: match.index + 1,
             content: line,
@@ -68,46 +75,28 @@ async function searchInFile(filePath: string, query: string, isRegex: boolean = 
 
     return results;
   } catch (error) {
-    console.error(`Error searching in file ${filePath}:`, error);
+    console.error(`Error searching in file content ${filePath}:`, error);
     return [];
   }
 }
 
-// Get all files in directory recursively
-async function getAllFiles(dirPath: string, maxDepth: number = 10, currentDepth: number = 0): Promise<string[]> {
-  if (currentDepth > maxDepth) return [];
-
-  try {
-    const files: string[] = [];
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
-
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name);
-      
-      // Skip hidden files and common ignore patterns
-      if (entry.name.startsWith('.') || 
-          entry.name === 'node_modules' || 
-          entry.name === 'dist' || 
-          entry.name === 'build') {
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        const subFiles = await getAllFiles(fullPath, maxDepth, currentDepth + 1);
-        files.push(...subFiles);
-      } else if (entry.isFile()) {
-        files.push(fullPath);
-      }
-    }
-
-    return files;
-  } catch (error) {
-    console.error(`Error reading directory ${dirPath}:`, error);
-    return [];
+// Helper function to determine search type based on query
+function determineSearchType(query: string): 'exact' | 'name' | 'content' | 'unified' {
+  // If query looks like a filename with extension, prefer exact search
+  if (query.includes('.') && query.split('.').length === 2 && !query.includes(' ')) {
+    return 'exact';
   }
+  
+  // If query has spaces or special characters, likely content search
+  if (query.includes(' ') || /[{}()\[\]"']/.test(query)) {
+    return 'content';
+  }
+  
+  // Default to unified search
+  return 'unified';
 }
 
-// Search across project files
+// Search across project files using database RAG
 router.post('/projects/:projectId/search', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
@@ -126,56 +115,94 @@ router.post('/projects/:projectId/search', authenticateToken, async (req: Reques
       wholeWord = false,
       includeExtensions = [],
       excludeExtensions = ['.log', '.tmp', '.cache'],
-      maxResults = 100
+      maxResults = 100,
+      searchType // auto-detect if not specified
     } = options;
 
-    // Use current working directory as the project directory
-    const projectDir = process.cwd();
+    let dbFiles: any[] = [];
     
-    let searchQuery = query;
-    if (!caseSensitive && !regex) {
-      searchQuery = query.toLowerCase();
+    // Auto-detect search type if not specified
+    const detectedSearchType = searchType || determineSearchType(query);
+    
+    // Choose search strategy based on detected type
+    if (detectedSearchType === 'exact') {
+      // Exact filename search (e.g., "package.json")
+      dbFiles = await ProjectFileModel.searchByExactName(projectId, query, maxResults);
+    } else if (detectedSearchType === 'name') {
+      // Filename/path search
+      dbFiles = await ProjectFileModel.searchByName(projectId, query, maxResults);
+    } else if (detectedSearchType === 'content') {
+      // Content-only search
+      dbFiles = await ProjectFileModel.searchByContent(projectId, query, maxResults);
+    } else {
+      // Unified search (name, path, and content)
+      dbFiles = await ProjectFileModel.searchFiles(projectId, query, maxResults);
     }
 
-    if (wholeWord && !regex) {
-      searchQuery = new RegExp(`\\b${query}\\b`, caseSensitive ? 'g' : 'gi');
+    // Filter by extensions if specified
+    if (includeExtensions.length > 0 || excludeExtensions.length > 0) {
+      dbFiles = dbFiles.filter(file => {
+        const ext = path.extname(file.name);
+        
+        if (includeExtensions.length > 0 && !includeExtensions.includes(ext)) {
+          return false;
+        }
+        
+        if (excludeExtensions.includes(ext)) {
+          return false;
+        }
+        
+        return true;
+      });
     }
 
-    const allFiles = await getAllFiles(projectDir);
     const results: SearchResult[] = [];
-
-    // Filter files by extension
-    const filteredFiles = allFiles.filter(file => {
-      const ext = path.extname(file);
+    
+    // Process each file to find specific line matches
+    for (const file of dbFiles.slice(0, maxResults)) {
+      if (!file.content) continue;
       
-      if (includeExtensions.length > 0 && !includeExtensions.includes(ext)) {
-        return false;
+      let searchQuery = query;
+      if (wholeWord && !regex) {
+        searchQuery = `\\b${query}\\b`;
+        regex = true;
       }
       
-      if (excludeExtensions.includes(ext)) {
-        return false;
+      const fileResults = await searchInFileContent(
+        file.content, 
+        file.path, 
+        file.id,
+        searchQuery, 
+        regex
+      );
+      
+      results.push(...fileResults);
+      
+      // If no content matches but filename/path matched, add file reference
+      if (fileResults.length === 0 && (file.name.toLowerCase().includes(query.toLowerCase()) || file.path.toLowerCase().includes(query.toLowerCase()))) {
+        results.push({
+          file: file.path,
+          path: file.path,
+          fileId: file.id,
+          line: 1,
+          column: 1,
+          content: file.content?.split('\n')[0] || '',
+          preview: `File: ${file.name}`,
+          match: query
+        });
       }
-      
-      return true;
-    });
-
-    // Search in each file
-    for (const file of filteredFiles) {
-      if (results.length >= maxResults) break;
-      
-      const fileResults = await searchInFile(file, searchQuery, regex || wholeWord);
-      results.push(...fileResults.slice(0, maxResults - results.length));
     }
 
     res.json({
       success: true,
       data: {
-        results,
+        results: results.slice(0, maxResults),
         query,
-        totalFiles: filteredFiles.length,
-        matchingFiles: new Set(results.map(r => r.file)).size,
+        totalFiles: dbFiles.length,
+        matchingFiles: new Set(results.map(r => r.fileId)).size,
         totalMatches: results.length,
-        truncated: results.length >= maxResults
+        truncated: results.length >= maxResults,
+        searchType: detectedSearchType
       }
     });
   } catch (error) {
@@ -187,7 +214,7 @@ router.post('/projects/:projectId/search', authenticateToken, async (req: Reques
   }
 });
 
-// Search for files by name
+// Search for files by name using database RAG
 router.post('/projects/:projectId/find-files', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
@@ -203,49 +230,30 @@ router.post('/projects/:projectId/find-files', authenticateToken, async (req: Re
     const {
       caseSensitive = false,
       regex = false,
-      maxResults = 50
+      maxResults = 50,
+      exactMatch = false
     } = options;
 
-    // Use current working directory as the project directory
-    const projectDir = process.cwd();
+    let dbFiles: any[] = [];
     
-    const allFiles = await getAllFiles(projectDir);
-    const results: FileResult[] = [];
-
-    const searchPattern = regex 
-      ? new RegExp(query, caseSensitive ? 'g' : 'gi')
-      : caseSensitive ? query : query.toLowerCase();
-
-    for (const filePath of allFiles) {
-      if (results.length >= maxResults) break;
-      
-      const fileName = path.basename(filePath);
-      const searchTarget = caseSensitive ? fileName : fileName.toLowerCase();
-      
-      let isMatch = false;
-      
-      if (regex && searchPattern instanceof RegExp) {
-        isMatch = searchPattern.test(fileName);
-      } else {
-        isMatch = searchTarget.includes(searchPattern as string);
-      }
-      
-      if (isMatch) {
-        try {
-          const stats = await fs.stat(filePath);
-          results.push({
-            path: filePath,
-            name: fileName,
-            type: 'file',
-            size: stats.size,
-            modified: stats.mtime
-          });
-        } catch (error) {
-          // Skip files that can't be accessed
-          continue;
-        }
-      }
+    if (exactMatch) {
+      // Exact filename match
+      dbFiles = await ProjectFileModel.searchByExactName(projectId, query, maxResults);
+    } else {
+      // Fuzzy name/path search
+      dbFiles = await ProjectFileModel.searchByName(projectId, query, maxResults);
     }
+
+    // Convert database files to FileResult format
+    const results: FileResult[] = dbFiles.map(file => ({
+      id: file.id,
+      path: file.path,
+      name: file.name,
+      type: file.type as 'file' | 'directory',
+      size: file.size,
+      modified: new Date(file.updatedAt),
+      mimeType: file.mimeType
+    }));
 
     res.json({
       success: true,
@@ -253,7 +261,8 @@ router.post('/projects/:projectId/find-files', authenticateToken, async (req: Re
         results,
         query,
         totalFound: results.length,
-        truncated: results.length >= maxResults
+        truncated: results.length >= maxResults,
+        exactMatch
       }
     });
   } catch (error) {
@@ -265,15 +274,21 @@ router.post('/projects/:projectId/find-files', authenticateToken, async (req: Re
   }
 });
 
-// Get file navigation info (symbols, functions, classes)
+// Get file navigation info (symbols, functions, classes) from database
 router.get('/projects/:projectId/files/:filePath/symbols', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { projectId, filePath } = req.params;
     
-    // Use current working directory and join with the requested file path
-    const actualFilePath = path.join(process.cwd(), filePath);
+    // Get file from database
+    const file = await ProjectFileModel.findByPath(projectId, filePath);
+    if (!file || !file.content) {
+      return res.status(404).json({
+        success: false,
+        error: 'File not found or has no content'
+      });
+    }
     
-    const content = await fs.readFile(actualFilePath, 'utf-8');
+    const content = file.content;
     const lines = content.split('\n');
     const symbols: Array<{name: string, kind: string, line: number, column?: number, scope?: string}> = [];
 
@@ -392,7 +407,7 @@ router.get('/projects/:projectId/files/:filePath/symbols', authenticateToken, as
   }
 });
 
-// Quick search across multiple types
+// Quick search across multiple types using database RAG
 router.post('/projects/:projectId/quick-search', authenticateToken, async (req: Request, res: Response) => {
   try {
     const { projectId } = req.params;
@@ -405,46 +420,70 @@ router.post('/projects/:projectId/quick-search', authenticateToken, async (req: 
       });
     }
 
-    const projectDir = process.cwd();
+    // Determine search strategy based on query
+    const isExactFile = query.includes('.') && query.split('.').length === 2;
     
-    // Search for files
-    const allFiles = await getAllFiles(projectDir);
-    const fileResults = allFiles
-      .filter(file => path.basename(file).toLowerCase().includes(query.toLowerCase()))
-      .slice(0, 10)
-      .map(file => ({
-        type: 'file',
-        name: path.basename(file),
-        path: file,
-        preview: `File: ${path.basename(file)}`
-      }));
+    // Search for files by name (prioritize exact matches)
+    const fileResults = isExactFile
+      ? await ProjectFileModel.searchByExactName(projectId, query, 10)
+      : await ProjectFileModel.searchByName(projectId, query, 10);
 
-    // Search in content (limited)
+    const formattedFileResults = fileResults.map(file => ({
+      type: 'file',
+      id: file.id,
+      name: file.name,
+      path: file.path,
+      preview: `File: ${file.name}`,
+      mimeType: file.mimeType,
+      size: file.size
+    }));
+
+    // Search in content (limited for performance)
+    const contentFiles = await ProjectFileModel.searchByContent(projectId, query, 20);
     const contentResults: any[] = [];
-    const searchFiles = allFiles.slice(0, 20); // Limit files to search for performance
     
-    for (const file of searchFiles) {
-      if (contentResults.length >= 10) break;
+    for (const file of contentFiles.slice(0, 10)) {
+      if (!file.content) continue;
       
-      const matches = await searchInFile(file, query);
+      const matches = await searchInFileContent(file.content, file.path, file.id, query);
       matches.slice(0, 2).forEach(match => {
         contentResults.push({
           type: 'content',
-          name: `${path.basename(match.file)}:${match.line}`,
-          path: match.file,
+          id: file.id,
+          name: `${file.name}:${match.line}`,
+          path: file.path,
           preview: match.preview,
-          line: match.line
+          line: match.line,
+          column: match.column
         });
       });
     }
 
+    // Recent files as additional context
+    const recentFiles = await ProjectFileModel.getRecentFiles(projectId, 5);
+    const recentResults = recentFiles
+      .filter(file => 
+        file.name.toLowerCase().includes(query.toLowerCase()) ||
+        (file.content && file.content.toLowerCase().includes(query.toLowerCase()))
+      )
+      .map(file => ({
+        type: 'recent',
+        id: file.id,
+        name: file.name,
+        path: file.path,
+        preview: `Recent: ${file.name}`,
+        modified: file.updatedAt
+      }));
+
     res.json({
       success: true,
       data: {
-        files: fileResults,
+        files: formattedFileResults,
         content: contentResults,
+        recent: recentResults,
         query,
-        hasMore: allFiles.length > 20
+        totalResults: formattedFileResults.length + contentResults.length + recentResults.length,
+        searchStrategy: isExactFile ? 'exact' : 'fuzzy'
       }
     });
   } catch (error) {

@@ -13,11 +13,13 @@ console.log('🤖 AI Preview Monitor initialized and ready');
 router.post('/conversations', authMiddleware, async (req, res) => {
   try {
     const userId = req.user?.id;
+    const { projectId } = req.body;
+    
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const conversationId = await mistralAgentService.createConversation(userId);
+    const conversationId = await mistralAgentService.createConversation(userId, projectId);
     res.json({ conversationId });
   } catch (error) {
     console.error('Error creating conversation:', error);
@@ -67,6 +69,24 @@ router.post('/conversations/:conversationId/messages', authMiddleware, async (re
   }
 });
 
+// Get user conversations
+router.get('/conversations', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { projectId } = req.query;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const conversations = await mistralAgentService.getUserConversations(userId, projectId as string);
+    res.json({ conversations });
+  } catch (error) {
+    console.error('Error getting user conversations:', error);
+    res.status(500).json({ error: 'Failed to get conversations' });
+  }
+});
+
 // Get conversation history
 router.get('/conversations/:conversationId/messages', authMiddleware, async (req, res) => {
   try {
@@ -77,12 +97,17 @@ router.get('/conversations/:conversationId/messages', authMiddleware, async (req
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const conversation = mistralAgentService.getConversation(conversationId);
+    // Try to load from memory first, then database
+    let conversation = mistralAgentService.getConversation(conversationId);
+    if (!conversation) {
+      conversation = await mistralAgentService.loadConversationFromDb(conversationId);
+    }
+    
     if (!conversation || conversation.userId !== userId) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    const messages = mistralAgentService.getConversationHistory(conversationId);
+    const messages = conversation.messages;
     res.json({ messages });
   } catch (error) {
     console.error('Error getting conversation history:', error);

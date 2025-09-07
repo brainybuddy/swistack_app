@@ -1,0 +1,413 @@
+{
+  "id": "elearning-platform",
+  "name": "E-Learning Platform",
+  "description": "A comprehensive online learning management system with courses, modules, progress tracking, and interactive features",
+  "category": "Educational",
+  "thumbnail": "/templates/elearning-platform.png",
+  "tags": ["education", "lms", "courses", "next.js", "tailwind"],
+  "technologies": [
+    "Next.js 14",
+    "TypeScript",
+    "Tailwind CSS",
+    "Prisma",
+    "NextAuth.js",
+    "React Query",
+    "Zustand"
+  ],
+  "features": [
+    "Course Management System",
+    "Video Lessons & Resources",
+    "Progress Tracking",
+    "Quiz & Assessments",
+    "User Dashboard",
+    "Instructor Panel",
+    "Discussion Forums",
+    "Certificate Generation",
+    "Payment Integration",
+    "Mobile Responsive"
+  ],
+  "ports": {
+    "frontend": 3000,
+    "backend": 3001,
+    "database": 5432,
+    "reserved": [3002, 3003, 3004]
+  },
+  "files": [
+    {
+      "path": "package.json",
+      "type": "file"
+    },
+    {
+      "path": "next.config.js",
+      "type": "file"
+    },
+    {
+      "path": "tailwind.config.js",
+      "type": "file"
+    },
+    {
+      "path": "postcss.config.js",
+      "type": "file"
+    },
+    {
+      "path": "tsconfig.json",
+      "type": "file"
+    },
+    {
+      "path": ".env.local",
+      "type": "file"
+    },
+    {
+      "path": "prisma",
+      "type": "directory"
+    },
+    {
+      "path": "prisma/schema.prisma",
+      "type": "file"
+    },
+    {
+      "path": "app",
+      "type": "directory"
+    },
+    {
+      "path": "app/layout.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/globals.css",
+      "type": "file"
+    },
+    {
+      "path": "app/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/not-found.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(auth)",
+      "type": "directory"
+    },
+    {
+      "path": "app/(auth)/sign-in",
+      "type": "directory"
+    },
+    {
+      "path": "app/(auth)/sign-in/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(auth)/sign-up",
+      "type": "directory"
+    },
+    {
+      "path": "app/(auth)/sign-up/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/layout.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)/dashboard",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/dashboard/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)/courses",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/courses/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)/courses/[courseId]",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/courses/[courseId]/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)/courses/[courseId]/module",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/courses/[courseId]/module/[moduleId]",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/courses/[courseId]/module/[moduleId]/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)/instructor",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/instructor/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)/instructor/courses",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/instructor/courses/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/(dashboard)/instructor/courses/new",
+      "type": "directory"
+    },
+    {
+      "path": "app/(dashboard)/instructor/courses/new/page.tsx",
+      "type": "file"
+    },
+    {
+      "path": "app/api",
+      "type": "directory"
+    },
+    {
+      "path": "app/api/auth/[...nextauth]",
+      "type": "directory"
+    },
+    {
+      "path": "app/api/auth/[...nextauth]/route.ts",
+      "type": "file"
+    },
+    {
+      "path": "app/api/courses",
+      "type": "directory"
+    },
+    {
+      "path": "app/api/courses/route.ts",
+      "type": "file"
+    },
+    {
+      "path": "app/api/courses/[courseId]",
+      "type": "directory"
+    },
+    {
+      "path": "app/api/courses/[courseId]/route.ts",
+      "type": "file"
+    },
+    {
+      "path": "app/api/courses/[courseId]/modules",
+      "type": "directory"
+    },
+    {
+      "path": "app/api/courses/[courseId]/modules/route.ts",
+      "type": "file"
+    },
+    {
+      "path": "app/api/users",
+      "type": "directory"
+    },
+    {
+      "path": "app/api/users/route.ts",
+      "type": "file"
+    },
+    {
+      "path": "app/api/progress",
+      "type": "directory"
+    },
+    {
+      "path": "app/api/progress/route.ts",
+      "type": "file"
+    },
+    {
+      "path": "components",
+      "type": "directory"
+    },
+    {
+      "path": "components/ui",
+      "type": "directory"
+    },
+    {
+      "path": "components/ui/button.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/ui/input.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/ui/card.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/ui/badge.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/ui/progress.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/ui/avatar.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/ui/tabs.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/auth",
+      "type": "directory"
+    },
+    {
+      "path": "components/auth/AuthForm.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/auth/ProtectedRoute.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/course",
+      "type": "directory"
+    },
+    {
+      "path": "components/course/CourseCard.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/course/CourseProgress.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/course/VideoPlayer.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/course/QuizComponent.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/layout",
+      "type": "directory"
+    },
+    {
+      "path": "components/layout/Header.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/layout/Sidebar.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/layout/Footer.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/dashboard",
+      "type": "directory"
+    },
+    {
+      "path": "components/dashboard/StatsCard.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/dashboard/RecentCourses.tsx",
+      "type": "file"
+    },
+    {
+      "path": "components/dashboard/ProgressChart.tsx",
+      "type": "file"
+    },
+    {
+      "path": "lib",
+      "type": "directory"
+    },
+    {
+      "path": "lib/auth.ts",
+      "type": "file"
+    },
+    {
+      "path": "lib/prisma.ts",
+      "type": "file"
+    },
+    {
+      "path": "lib/api.ts",
+      "type": "file"
+    },
+    {
+      "path": "lib/utils.ts",
+      "type": "file"
+    },
+    {
+      "path": "lib/validations.ts",
+      "type": "file"
+    },
+    {
+      "path": "store",
+      "type": "directory"
+    },
+    {
+      "path": "store/useAuthStore.ts",
+      "type": "file"
+    },
+    {
+      "path": "store/useCourseStore.ts",
+      "type": "file"
+    },
+    {
+      "path": "hooks",
+      "type": "directory"
+    },
+    {
+      "path": "hooks/useAuth.ts",
+      "type": "file"
+    },
+    {
+      "path": "hooks/useCourses.ts",
+      "type": "file"
+    },
+    {
+      "path": "hooks/useProgress.ts",
+      "type": "file"
+    },
+    {
+      "path": "types",
+      "type": "directory"
+    },
+    {
+      "path": "types/index.ts",
+      "type": "file"
+    },
+    {
+      "path": "public",
+      "type": "directory"
+    },
+    {
+      "path": "public/favicon.ico",
+      "type": "file"
+    },
+    {
+      "path": "public/logo.svg",
+      "type": "file"
+    },
+    {
+      "path": "public/images",
+      "type": "directory"
+    },
+    {
+      "path": "public/images/course-placeholder.jpg",
+      "type": "file"
+    },
+    {
+      "path": "README.md",
+      "type": "file"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ interface QueryResult {
 }
 
 interface RAGResponse {
-  type: 'count_files' | 'list_tree' | 'search_files' | 'read_file';
+  type: 'count_files' | 'list_tree' | 'search_files' | 'read_file' | 'write_file' | 'create_file' | 'modify_file' | 'delete_file' | 'create_directory' | 'move_file';
   result: any;
   query: string;
 }
@@ -42,9 +42,28 @@ export class QueryRouter {
       /\b(what files are|what's in|what are the files)\b/i,
       /\b(can i see|can you show me|can you list)\b.*(files?|directory)\b/i,
       
+      // File read operations
       /\b(read|open|show)\s+[\w\.-]+\.(js|jsx|ts|tsx|json|md|css|html|py|java)/i,
       /\b(find|search for|show me)\s+[\w\.-]+\.json/i, // More specific for JSON files
-      /\.(js|jsx|ts|tsx|json|md|css|html)$/i
+      /\.(js|jsx|ts|tsx|json|md|css|html)$/i,
+      
+      // File write/create operations
+      /\b(write|create|make|generate|add)\s+(a\s+)?new\s+file/i,
+      /\b(write|create|make|generate)\s+[\w\.-]+\.(js|jsx|ts|tsx|json|md|css|html|py|java)/i,
+      /\b(save|write|create)\s+(to\s+|in\s+)?[\w\/\.-]+/i,
+      /\b(create|make|add)\s+(a\s+)?(new\s+)?(directory|folder)/i,
+      
+      // File modify operations  
+      /\b(modify|update|edit|change)\s+[\w\.-]+\.(js|jsx|ts|tsx|json|md|css|html|py|java)/i,
+      /\b(update|modify|edit|change)\s+(the\s+)?file/i,
+      
+      // File delete operations
+      /\b(delete|remove|rm)\s+[\w\.-]+\.(js|jsx|ts|tsx|json|md|css|html|py|java)/i,
+      /\b(delete|remove|rm)\s+(the\s+)?file/i,
+      
+      // File move/rename operations
+      /\b(move|rename|mv)\s+[\w\.-]+/i,
+      /\b(rename|move)\s+(the\s+)?file/i
     ];
 
     return ragPatterns.some(pattern => pattern.test(lower));
@@ -174,6 +193,96 @@ export class QueryRouter {
             };
           }
         }
+      }
+
+      // File write operations
+      if (/\b(write|create|make|generate|add)\s+(a\s+)?new\s+file/i.test(lower) || 
+          /\b(write|create|make|generate)\s+[\w\.-]+\.(js|jsx|ts|tsx|json|md|css|html|py|java)/i.test(lower)) {
+        return {
+          success: true,
+          shouldUseRAG: true,
+          data: {
+            type: 'create_file',
+            result: { 
+              message: 'Use create_file tool with path, content, projectId, and userId parameters',
+              requiresParameters: ['path', 'content', 'projectId', 'userId'],
+              optionalParameters: ['backupBeforeWrite', 'dryRun']
+            },
+            query: actualMessage
+          }
+        };
+      }
+
+      // File modify operations  
+      if (/\b(modify|update|edit|change)\s+[\w\.-]+\.(js|jsx|ts|tsx|json|md|css|html|py|java)/i.test(lower) ||
+          /\b(update|modify|edit|change)\s+(the\s+)?file/i.test(lower)) {
+        return {
+          success: true,
+          shouldUseRAG: true,
+          data: {
+            type: 'modify_file',
+            result: { 
+              message: 'Use modify_file tool with path, content, projectId, and userId parameters',
+              requiresParameters: ['path', 'content', 'projectId', 'userId'],
+              optionalParameters: ['force', 'backupBeforeWrite', 'dryRun']
+            },
+            query: actualMessage
+          }
+        };
+      }
+
+      // File delete operations
+      if (/\b(delete|remove|rm)\s+[\w\.-]+\.(js|jsx|ts|tsx|json|md|css|html|py|java)/i.test(lower) ||
+          /\b(delete|remove|rm)\s+(the\s+)?file/i.test(lower)) {
+        return {
+          success: true,
+          shouldUseRAG: true,
+          data: {
+            type: 'delete_file',
+            result: { 
+              message: 'Use delete_file tool with path, projectId, and userId parameters. REQUIRES confirmation unless force=true',
+              requiresParameters: ['path', 'projectId', 'userId'],
+              optionalParameters: ['force', 'backupBeforeWrite', 'dryRun'],
+              warning: 'This operation is destructive and requires confirmation'
+            },
+            query: actualMessage
+          }
+        };
+      }
+
+      // Directory creation
+      if (/\b(create|make|add)\s+(a\s+)?(new\s+)?(directory|folder)/i.test(lower)) {
+        return {
+          success: true,
+          shouldUseRAG: true,
+          data: {
+            type: 'create_directory',
+            result: { 
+              message: 'Use create_directory tool with path, projectId, and userId parameters',
+              requiresParameters: ['path', 'projectId', 'userId'],
+              optionalParameters: ['dryRun']
+            },
+            query: actualMessage
+          }
+        };
+      }
+
+      // File move/rename operations
+      if (/\b(move|rename|mv)\s+[\w\.-]+/i.test(lower) ||
+          /\b(rename|move)\s+(the\s+)?file/i.test(lower)) {
+        return {
+          success: true,
+          shouldUseRAG: true,
+          data: {
+            type: 'move_file',
+            result: { 
+              message: 'Use move_file tool with sourcePath, destinationPath, projectId, and userId parameters',
+              requiresParameters: ['sourcePath', 'destinationPath', 'projectId', 'userId'],
+              optionalParameters: ['force', 'dryRun']
+            },
+            query: actualMessage
+          }
+        };
       }
 
       // If no RAG pattern matched, indicate it should use LLM

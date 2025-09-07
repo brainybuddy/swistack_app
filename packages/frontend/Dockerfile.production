@@ -1,0 +1,59 @@
+# Multi-stage build for production-optimized frontend
+FROM node:18-alpine AS base
+WORKDIR /app
+
+# Install dependencies
+FROM base AS dependencies
+COPY package*.json ./
+COPY packages/frontend/package*.json ./packages/frontend/
+COPY packages/shared/package*.json ./packages/shared/
+RUN npm ci --only=production --workspace=packages/frontend --workspace=packages/shared
+
+# Build the application
+FROM base AS build
+COPY package*.json ./
+COPY packages/frontend/package*.json ./packages/frontend/
+COPY packages/shared/package*.json ./packages/shared/
+RUN npm ci --workspace=packages/frontend --workspace=packages/shared
+
+COPY packages/shared ./packages/shared
+COPY packages/frontend ./packages/frontend
+
+# Build shared package first
+RUN npm run build --workspace=packages/shared
+
+# Build frontend
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build --workspace=packages/frontend
+
+# Production image
+FROM node:18-alpine AS runtime
+WORKDIR /app
+
+# Add non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy built application
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=build /app/packages/frontend/.next ./packages/frontend/.next
+COPY --from=build /app/packages/frontend/public ./packages/frontend/public
+COPY --from=build /app/packages/frontend/package*.json ./packages/frontend/
+COPY --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build /app/packages/shared/package*.json ./packages/shared/
+
+# Set correct permissions
+RUN chown -R nextjs:nodejs /app
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+# Start the application
+WORKDIR /app/packages/frontend
+CMD ["npm", "start"]

@@ -1,0 +1,20 @@
+{
+  "name": "swistack-container-monitor",
+  "version": "1.0.0",
+  "description": "Container monitoring and resource management for SwiStack",
+  "main": "monitor.js",
+  "scripts": {
+    "start": "node monitor.js",
+    "dev": "nodemon monitor.js"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.2",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": ["docker", "monitoring", "containers", "swistack"],
+  "author": "SwiStack Team",
+  "license": "MIT"
+}

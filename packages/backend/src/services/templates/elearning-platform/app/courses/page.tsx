@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Navigation } from '@/components/layout/Navigation'
 import { 
   Search, 
   Filter,
@@ -163,7 +164,6 @@ export default function CoursesPage() {
   const [sortBy, setSortBy] = useState('Most Popular')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [currentPage, setCurrentPage] = useState(1)
-  const [showFilters, setShowFilters] = useState(false)
   
   const coursesPerPage = 6
   const totalPages = Math.ceil(courses.length / coursesPerPage)
@@ -202,6 +202,8 @@ export default function CoursesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <Navigation />
+
       {/* Header */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -307,7 +309,7 @@ export default function CoursesPage() {
 
         {/* Course Grid/List */}
         {viewMode === 'grid' ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8 mb-12">
             {paginatedCourses.map((course) => (
               <Card key={course.id} className="group hover:shadow-xl transition-all duration-300 border-0 shadow-md">
                 <div className="aspect-video relative overflow-hidden rounded-t-lg">

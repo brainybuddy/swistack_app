@@ -233,7 +233,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
           </Button>
           <div className="pt-2 text-center">
             <p className="text-xs text-gray-500">
-              Port: {{PORT}} | Built with SwiStack
+              Built with SwiStack
             </p>
           </div>
         </div>

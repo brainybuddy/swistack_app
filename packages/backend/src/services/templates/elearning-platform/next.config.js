@@ -13,12 +13,12 @@ const nextConfig = {
     ]
   },
   env: {
-    CUSTOM_KEY: process.env.CUSTOM_KEY,
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-    DATABASE_URL: process.env.DATABASE_URL,
-    FRONTEND_PORT: '{{FRONTEND_PORT}}',
-    BACKEND_PORT: '{{BACKEND_PORT}}'
+    CUSTOM_KEY: process.env.CUSTOM_KEY || 'demo-key',
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL || `http://localhost:${process.env.PORT || '3000'}`,
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET || 'demo-secret',
+    DATABASE_URL: process.env.DATABASE_URL || 'sqlite://./demo.db',
+    FRONTEND_PORT: process.env.PORT || '3000',
+    BACKEND_PORT: process.env.BACKEND_PORT || '3001'
   }
 }
 

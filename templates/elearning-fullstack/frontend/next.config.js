@@ -4,8 +4,8 @@ const nextConfig = {
     appDir: true,
   },
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005',
-    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3005',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || `http://localhost:${process.env.BACKEND_PORT || '3005'}`,
+    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || `http://localhost:${process.env.BACKEND_PORT || '3005'}`,
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
     NEXT_PUBLIC_GOOGLE_ANALYTICS_ID: process.env.NEXT_PUBLIC_GOOGLE_ANALYTICS_ID,
   },
@@ -18,15 +18,16 @@ const nextConfig = {
       {
         protocol: 'http',
         hostname: 'localhost',
-        port: '3005',
+        // omit port to allow any local dev port
       },
     ],
   },
   async rewrites() {
+    const backend = process.env.NEXT_PUBLIC_API_URL || `http://localhost:${process.env.BACKEND_PORT || '3005'}`;
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005'}/api/:path*`,
+        destination: `${backend}/api/:path*`,
       },
     ];
   },

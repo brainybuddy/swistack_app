@@ -18,6 +18,8 @@ export class DevServerManager {
   private static instance: DevServerManager;
   private servers: Map<string, DevServer> = new Map();
   private readonly workspaceRoot = '/tmp/swistack-dev-servers';
+  private logs: Map<string, string[]> = new Map();
+  private readonly LOG_LIMIT = 1000;
 
   public static getInstance(): DevServerManager {
     if (!DevServerManager.instance) {
@@ -36,6 +38,19 @@ export class DevServerManager {
     } catch (error) {
       console.error('Failed to create workspace directory:', error);
     }
+  }
+
+  private appendLog(projectId: string, line: string) {
+    const ts = new Date().toISOString();
+    const entry = `[${ts}] ${line}`;
+    const arr = this.logs.get(projectId) || [];
+    arr.push(entry);
+    if (arr.length > this.LOG_LIMIT) arr.splice(0, arr.length - this.LOG_LIMIT);
+    this.logs.set(projectId, arr);
+  }
+
+  public getLogs(projectId: string): string[] {
+    return this.logs.get(projectId) || [];
   }
 
   /**
@@ -75,6 +90,7 @@ export class DevServerManager {
       await this.generatePackageJson(project, workspaceDir);
 
       // Start the development server
+      this.appendLog(project.id, `Starting dev server for ${project.name} on port ${project.ports.frontend}`);
       const devServer = await this.spawnDevServer(project, workspaceDir);
       
       if (!devServer) {
@@ -114,6 +130,7 @@ export class DevServerManager {
     }
 
     server.status = 'stopped';
+    this.appendLog(projectId, '⏹️ Dev server stopped');
     
     // Clean up workspace directory
     try {
@@ -151,6 +168,14 @@ export class DevServerManager {
   isServerRunning(projectId: string): boolean {
     const server = this.servers.get(projectId);
     return server?.status === 'running' || false;
+  }
+
+  /**
+   * Get raw status for a project's dev server
+   */
+  getStatus(projectId: string): 'starting' | 'running' | 'stopped' | 'error' | null {
+    const server = this.servers.get(projectId);
+    return server?.status || null;
   }
 
   /**
@@ -207,7 +232,13 @@ export class DevServerManager {
 
     // Detect project type and set up appropriate scripts
     const isNextJs = project.template.includes('next') || 
-                    project.files.some(f => f.path === 'next.config.js' || f.path === 'app/page.tsx');
+                    project.files.some(f => (
+                      f.path === 'next.config.js' ||
+                      f.path === 'src/app/page.tsx' ||
+                      f.path === 'app/page.tsx' ||
+                      f.path === 'src/pages/index.tsx' ||
+                      f.path === 'pages/index.tsx'
+                    ));
     
     if (isNextJs) {
       packageJson.dependencies = {
@@ -261,6 +292,8 @@ export class DevServerManager {
         cwd: workspaceDir,
         stdio: 'pipe'
       });
+      installProcess.stdout?.on('data', d => this.appendLog(project.id, `[npm install] ${d.toString().trim()}`));
+      installProcess.stderr?.on('data', d => this.appendLog(project.id, `[npm install] ${d.toString().trim()}`));
 
       installProcess.on('close', (code) => {
         // Start dev server after install (or even if install fails)
@@ -277,6 +310,7 @@ export class DevServerManager {
         devProcess.stdout?.on('data', (data) => {
           const output = data.toString();
           console.log(`[DevServer:${project.ports.frontend}]`, output.trim());
+          this.appendLog(project.id, output.trim());
           
           // Check for server ready indicators
           if (!serverReady && (
@@ -294,6 +328,7 @@ export class DevServerManager {
         devProcess.stderr?.on('data', (data) => {
           const error = data.toString();
           console.error(`[DevServer:${project.ports.frontend}] Error:`, error.trim());
+          this.appendLog(project.id, `[stderr] ${error.trim()}`);
         });
 
         devProcess.on('close', (code) => {
@@ -305,6 +340,7 @@ export class DevServerManager {
         devProcess.on('error', (error) => {
           console.error(`Failed to start dev server for ${project.name}:`, error);
           server.status = 'error';
+          this.appendLog(project.id, `❌ Failed to start dev server: ${error.message}`);
           if (!serverReady) {
             resolve(null);
           }
@@ -314,7 +350,7 @@ export class DevServerManager {
         setTimeout(() => {
           if (!serverReady) {
             console.log(`⚠️ Dev server for ${project.name} taking longer than expected...`);
-            server.status = 'running'; // Assume it's working
+            // Keep status as 'starting' until reachability is confirmed by status route
             resolve(server);
           }
         }, 30000);

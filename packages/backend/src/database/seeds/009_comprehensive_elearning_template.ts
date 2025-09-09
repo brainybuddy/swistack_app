@@ -5,11 +5,11 @@ import * as path from 'path';
 export async function seed(knex: Knex): Promise<void> {
   const templateKey = 'comprehensive-elearning-platform';
 
-  // Check if template already exists
+  // Check if template already exists and delete it to update
   const existing = await knex('project_templates').where('key', templateKey).first();
   if (existing) {
-    console.log(`Template ${templateKey} already exists, skipping...`);
-    return;
+    console.log(`Template ${templateKey} already exists, updating...`);
+    await knex('project_templates').where('key', templateKey).del();
   }
 
   // Read all files from the template directory
@@ -50,6 +50,20 @@ export async function seed(knex: Knex): Promise<void> {
   let files: any[] = [];
   try {
     files = readDirectory(templatePath);
+    console.log(`Found ${files.length} files for template ${templateKey}`);
+    
+    // Filter out large files and node_modules to prevent database size issues
+    files = files.filter(file => {
+      if (file.path.includes('node_modules') || file.path.includes('.git') || file.path.includes('package-lock.json')) {
+        return false;
+      }
+      if (file.content && file.content.length > 50000) { // Skip files larger than 50KB
+        console.log(`Skipping large file: ${file.path} (${file.content.length} chars)`);
+        return false;
+      }
+      return true;
+    });
+    console.log(`Filtered to ${files.length} files for template ${templateKey}`);
   } catch (error) {
     console.error('Error reading template directory:', error);
     return;
@@ -57,8 +71,8 @@ export async function seed(knex: Knex): Promise<void> {
 
   const template = {
     key: templateKey,
-    name: 'E-Learning Platform',
-    description: 'A comprehensive online learning management system with courses, modules, quizzes, progress tracking, and interactive features. Built with Next.js 14, TypeScript, Tailwind CSS, and Prisma.',
+    name: 'Learnify - E-Learning Platform',
+    description: 'A modern e-learning platform featuring expert-led courses, community support, and flexible learning. Built with Next.js 14, TypeScript, and Tailwind CSS with a professional, responsive design.',
     category: 'Educational',
     language: 'TypeScript',
     framework: 'Next.js',
@@ -68,33 +82,43 @@ export async function seed(knex: Knex): Promise<void> {
     version: '1.0.0',
     files: JSON.stringify(files),
     dependencies: JSON.stringify({
-      "next": "14.0.3",
-      "react": "^18",
-      "react-dom": "^18",
-      "typescript": "^5",
-      "@types/node": "^20",
-      "@types/react": "^18",
-      "@types/react-dom": "^18",
-      "tailwindcss": "^3.3.0",
-      "autoprefixer": "^10.0.1",
-      "postcss": "^8",
-      "prisma": "^5.6.0",
-      "@prisma/client": "^5.6.0",
+      "next": "14.0.4",
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0",
+      "typescript": "^5.3.0",
+      "@types/node": "^20.10.0",
+      "@types/react": "^18.2.42",
+      "@types/react-dom": "^18.2.17",
+      "tailwindcss": "^3.3.6",
+      "autoprefixer": "^10.4.16",
+      "postcss": "^8.4.32",
+      "@tailwindcss/forms": "^0.5.7",
+      "@tailwindcss/typography": "^0.5.10",
+      "@prisma/client": "^5.7.0",
+      "prisma": "^5.7.0",
       "next-auth": "^4.24.5",
       "@next-auth/prisma-adapter": "^1.0.7",
-      "bcryptjs": "^2.4.3",
-      "@types/bcryptjs": "^2.4.6",
       "@tanstack/react-query": "^5.8.4",
-      "react-hot-toast": "^2.4.1",
+      "zustand": "^4.4.7",
+      "react-hook-form": "^7.48.2",
+      "@hookform/resolvers": "^3.3.2",
+      "zod": "^3.22.4",
+      "lucide-react": "^0.294.0",
       "class-variance-authority": "^0.7.0",
       "clsx": "^2.0.0",
-      "tailwind-merge": "^2.0.0",
+      "tailwind-merge": "^2.1.0",
+      "react-player": "^2.13.0",
+      "recharts": "^2.8.0",
+      "framer-motion": "^10.16.16",
+      "react-hot-toast": "^2.4.1",
+      "date-fns": "^2.30.0",
       "@radix-ui/react-slot": "^1.0.2",
       "@radix-ui/react-progress": "^1.0.3",
       "@radix-ui/react-label": "^2.0.2",
       "@radix-ui/react-select": "^2.0.0",
       "@radix-ui/react-dropdown-menu": "^2.0.6",
-      "lucide-react": "^0.294.0"
+      "bcryptjs": "^2.4.3",
+      "@types/bcryptjs": "^2.4.6"
     }),
     scripts: JSON.stringify({
       "dev": "next dev -p {{PORT}}",

@@ -1,13 +1,11 @@
 import express from 'express';
 import { mistralAgentService } from '../services/ai/MistralAgentService';
-import { aiPreviewMonitor } from '../services/ai/AIPreviewMonitor';
 import { authMiddleware } from '../middleware/auth';
 
 const router = express.Router();
 
-// Initialize agent service and AI preview monitor
+// Initialize agent service
 mistralAgentService.initialize().catch(console.error);
-console.log('🤖 AI Preview Monitor initialized and ready');
 
 // Create new conversation
 router.post('/conversations', authMiddleware, async (req, res) => {

@@ -1,0 +1,25 @@
+{
+  "name": "eduplatform-frontend-lite",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build": "next build && tsc",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "dev:frontend": "next dev -p 5200",
+    "dev:backend": "tsx watch src/server.ts",
+    "start:frontend": "next start -p 5200",
+    "start:backend": "node dist/server.js",
+    "build:frontend": "next build",
+    "build:backend": "tsc"
+  },
+  "dependencies": {
+    "next": "^14.0.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.3.2",
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0"
+  }
+}

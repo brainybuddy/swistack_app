@@ -51,6 +51,9 @@ import searchRouter from './routes/search';
 import autosaveRouter from './routes/autosave';
 import { invitationsRouter } from './routes/invitations';
 import agentRouter from './routes/agent';
+import portsRouter from './routes/ports';
+import previewRouter from './routes/preview';
+import devserverRouter from './routes/devserver';
 import { storageService } from './services/StorageService';
 import { TemplateService } from './services/TemplateService';
 import { HealthCheckService } from './services/HealthCheckService';
@@ -59,6 +62,7 @@ import { MigrationService } from './services/MigrationService';
 import { CollaborationService } from './services/CollaborationService';
 import { ProjectUpdateService } from './services/ProjectUpdateService';
 import { WebSocketService } from './services/WebSocketService';
+import { PreviewWebSocketService } from './services/PreviewWebSocketService';
 import { ErrorResponseUtil } from './utils/ErrorResponse';
 
 const app = express();
@@ -77,6 +81,9 @@ collaborationService.initialize();
 
 // Initialize WebSocket service for AI agent communication
 const webSocketService = new WebSocketService(io);
+
+// Initialize preview WebSocket service
+const previewWebSocketService = new PreviewWebSocketService(io);
 
 // Initialize project update service
 ProjectUpdateService.initialize(io);
@@ -137,6 +144,9 @@ app.get('/', (req, res) => {
       search: '/api/search',
       autosave: '/api/autosave',
       agent: '/api/agent',
+      ports: '/api/ports',
+      preview: '/api/preview',
+      devserver: '/api/devserver',
     },
   });
 });
@@ -153,6 +163,9 @@ app.use('/api/search', searchRouter);
 app.use('/api/autosave', autosaveRouter);
 app.use('/api/invitations', invitationsRouter);
 app.use('/api/agent', agentRouter);
+app.use('/api/ports', portsRouter);
+app.use('/api/preview', previewRouter);
+app.use('/api/devserver', devserverRouter);
 
 // Global error handler
 app.use((error: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -215,6 +228,11 @@ async function initializeServices() {
     // Start workspace cleanup scheduler
     GitService.startWorkspaceCleanupScheduler(6, 24); // Clean every 6 hours, max age 24 hours
     console.log('✅ Workspace cleanup scheduler started');
+    
+    // Initialize port allocation manager
+    const { portAllocationManager } = await import('./services/PortAllocationManager');
+    await portAllocationManager.loadExistingAllocations();
+    console.log('✅ Port allocation manager initialized');
     
     console.log('🎉 All services initialized successfully');
   } catch (error) {

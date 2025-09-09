@@ -3,6 +3,7 @@ import { ProjectFileModel } from '../models/ProjectFile';
 import { TemplateService } from './TemplateService';
 import { storageService } from './StorageService';
 import { CreateProjectRequest, UpdateProjectRequest } from '@swistack/shared';
+import { portAllocationManager } from './PortAllocationManager';
 
 export class ProjectService {
   static async createProject(
@@ -36,8 +37,16 @@ export class ProjectService {
         environment: data.environment || {},
       });
 
-      // Create project files from template
-      await this.createProjectFromTemplate(project.id, template, userId);
+      // Allocate ports for the project (default to 'spaced' strategy)
+      console.log('🔌 Allocating ports for project:', data.name);
+      const portAllocation = await portAllocationManager.allocatePortsForProject(
+        project.id, 
+        data.name, 
+        'spaced'
+      );
+
+      // Create project files from template with port allocation
+      await this.createProjectFromTemplate(project.id, template, userId, portAllocation);
 
       return project;
     } catch (error) {
@@ -256,7 +265,8 @@ export class ProjectService {
   private static async createProjectFromTemplate(
     projectId: string,
     template: any,
-    userId: string
+    userId: string,
+    portAllocation?: any
   ): Promise<void> {
     try {
       const files = template.files || [];
@@ -308,6 +318,11 @@ export class ProjectService {
             let storageKey: string | undefined;
             let content = file.content;
 
+            // Inject port configurations if port allocation is available
+            if (portAllocation && content) {
+              content = this.injectPortConfigurations(file.path, content, portAllocation);
+            }
+
             // If file is binary or large, store in MinIO
             if (file.isBinary || (content && content.length > 1024 * 10)) { // 10KB threshold
               storageKey = await storageService.uploadFile(
@@ -341,6 +356,197 @@ export class ProjectService {
       console.error('Failed to create project from template:', error);
       throw error;
     }
+
+    // Also materialize files to repositories/<projectId> for local dev workflows
+    try {
+      await this.materializeProjectToRepository(projectId);
+    } catch (e) {
+      console.warn('⚠️ Materialize to repository failed (non-blocking):', e);
+    }
+  }
+
+  /**
+   * Write current project files to repositories/<projectId> folder so dev servers can run from disk.
+   */
+  public static async materializeProjectToRepository(projectId: string): Promise<void> {
+    const path = await import('path');
+    const fs = await import('fs/promises');
+    const { storageService } = await import('./StorageService');
+    const base = process.env.WORKSPACE_BASE_PATH || '/Applications/swistack_app';
+    const repoDir = path.join(base, 'repositories', projectId);
+    await fs.mkdir(repoDir, { recursive: true });
+
+    const tree = await ProjectFileModel.getProjectTree(projectId);
+    for (const f of tree) {
+      const dest = path.join(repoDir, f.path);
+      if (f.type === 'directory') {
+        await fs.mkdir(dest, { recursive: true });
+      } else if (f.type === 'file') {
+        await fs.mkdir(path.dirname(dest), { recursive: true });
+        let content = f.content || '';
+        if (!content && f.storageKey) {
+          try { content = await storageService.downloadFile(f.storageKey); } catch {}
+        }
+        await fs.writeFile(dest, content || '', 'utf8');
+      }
+    }
+  }
+
+  /**
+   * Inject port configurations into project files
+   */
+  private static injectPortConfigurations(
+    filePath: string, 
+    content: string, 
+    portAllocation: any
+  ): string {
+    const fileName = filePath.split('/').pop()?.toLowerCase();
+
+    try {
+      // Handle package.json files
+      if (fileName === 'package.json') {
+        return this.updatePackageJsonWithPorts(content, portAllocation);
+      }
+
+      // Handle environment files
+      if (fileName === '.env' || fileName === '.env.local' || fileName === '.env.development') {
+        return this.updateEnvFileWithPorts(content, portAllocation);
+      }
+
+      // Handle Next.js configuration
+      if (fileName === 'next.config.js' || fileName === 'next.config.mjs') {
+        return this.updateNextConfigWithPorts(content, portAllocation);
+      }
+
+      // Handle Docker files
+      if (fileName === 'dockerfile' || fileName === 'docker-compose.yml') {
+        return this.updateDockerConfigWithPorts(content, portAllocation);
+      }
+
+      // Handle README files with port instructions
+      if (fileName === 'readme.md') {
+        return this.updateReadmeWithPorts(content, portAllocation);
+      }
+
+      // No modifications needed for other files
+      return content;
+    } catch (error) {
+      console.error(`❌ Failed to inject ports into ${filePath}:`, error);
+      return content; // Return original content on error
+    }
+  }
+
+  /**
+   * Update package.json with allocated ports
+   */
+  private static updatePackageJsonWithPorts(content: string, portAllocation: any): string {
+    try {
+      const packageJson = JSON.parse(content);
+      const scripts = portAllocation ? portAllocationManager.generatePackageJsonScripts(portAllocation) : {};
+      
+      // Merge with existing scripts, prioritizing allocated port scripts
+      packageJson.scripts = {
+        ...packageJson.scripts,
+        ...scripts
+      };
+
+      console.log(`✅ Updated package.json with ports: frontend=${portAllocation.frontendPort}, backend=${portAllocation.backendPort}`);
+      return JSON.stringify(packageJson, null, 2);
+    } catch (error) {
+      console.error('❌ Failed to update package.json:', error);
+      return content;
+    }
+  }
+
+  /**
+   * Update environment files with allocated ports
+   */
+  private static updateEnvFileWithPorts(content: string, portAllocation: any): string {
+    const envVars = portAllocation ? portAllocationManager.generateEnvironmentVariables(portAllocation) : {};
+    
+    let updatedContent = content;
+    Object.entries(envVars).forEach(([key, value]) => {
+      // Escape special regex characters in key
+      const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`^${escapedKey}=.*$`, 'm');
+      
+      if (regex.test(updatedContent)) {
+        updatedContent = updatedContent.replace(regex, `${key}=${value}`);
+      } else {
+        // Add with proper newline handling
+        if (updatedContent && !updatedContent.endsWith('\n')) {
+          updatedContent += '\n';
+        }
+        updatedContent += `${key}=${value}\n`;
+      }
+    });
+
+    console.log(`✅ Updated environment file with port variables`);
+    return updatedContent.trim(); // Remove trailing newlines
+  }
+
+  /**
+   * Update Next.js config with allocated ports
+   */
+  private static updateNextConfigWithPorts(content: string, portAllocation: any): string {
+    // For now, just add a comment about the allocated ports
+    const portComment = `
+// Allocated ports for this project:
+// Frontend: ${portAllocation.frontendPort}
+// Backend: ${portAllocation.backendPort}
+// Reserved: ${portAllocation.reservedPorts.join(', ')}
+
+`;
+    return portComment + content;
+  }
+
+  /**
+   * Update Docker configuration with allocated ports
+   */
+  private static updateDockerConfigWithPorts(content: string, portAllocation: any): string {
+    // Replace port mappings in Docker files
+    let updatedContent = content;
+    
+    // Replace common Docker port patterns
+    updatedContent = updatedContent.replace(/3000:3000/g, `${portAllocation.frontendPort}:${portAllocation.frontendPort}`);
+    updatedContent = updatedContent.replace(/3001:3001/g, `${portAllocation.backendPort}:${portAllocation.backendPort}`);
+    
+    console.log(`✅ Updated Docker configuration with allocated ports`);
+    return updatedContent;
+  }
+
+  /**
+   * Update README with port information
+   */
+  private static updateReadmeWithPorts(content: string, portAllocation: any): string {
+    const portInfo = `
+## 🔌 Port Allocation
+
+This project has been automatically allocated the following ports:
+
+- **Frontend**: http://localhost:${portAllocation.frontendPort}
+- **Backend**: http://localhost:${portAllocation.backendPort}
+- **Reserved Ports**: ${portAllocation.reservedPorts.join(', ')} (for future use)
+
+To start the development servers:
+\`\`\`bash
+npm run dev
+\`\`\`
+
+The frontend will be available at http://localhost:${portAllocation.frontendPort}
+The backend API will be available at http://localhost:${portAllocation.backendPort}
+
+`;
+
+    // Add port info after the main title or at the beginning
+    if (content.includes('# ')) {
+      const titleMatch = content.match(/(# [^\n]+\n)/);
+      if (titleMatch) {
+        return content.replace(titleMatch[1], titleMatch[1] + portInfo);
+      }
+    }
+    
+    return portInfo + content;
   }
 
   private static getMimeType(fileName: string): string | undefined {

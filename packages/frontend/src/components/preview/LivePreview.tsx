@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { AlertTriangle, RefreshCw, ExternalLink, Monitor, Zap, ZapOff } from 'lucide-react';
 
 interface FileNode {
@@ -16,6 +17,8 @@ interface LivePreviewProps {
   activeFile?: string;
   activeFileContent?: string;
   className?: string;
+  previewKey?: string; // stable key to persist preview across remounts
+  projectId?: string; // used to seed initial HTML from backend
 }
 
 // Transform file tree into a flat file structure
@@ -43,7 +46,13 @@ const compileApp = (files: Record<string, string>): string => {
   const allCss = cssFiles.map(([, content]) => content).join('\n\n');
   
   // Detect framework/template type based on files
-  const hasNextJs = files['app/page.tsx'] || files['src/app/page.tsx'] || files['pages/index.tsx'] || files['next.config.js'];
+  // Prefer Next.js app router under src/ for detection
+  const hasNextJs =
+    files['src/app/page.tsx'] ||
+    files['app/page.tsx'] ||
+    files['src/pages/index.tsx'] ||
+    files['pages/index.tsx'] ||
+    files['next.config.js'];
   const hasVue = files['src/App.vue'] || Object.keys(files).some(path => path.endsWith('.vue'));
   const hasReact = files['src/App.tsx'] || files['src/App.jsx'] || files['src/main.tsx'];
   const hasExpress = files['src/server.ts'] || files['app.js'];
@@ -249,7 +258,8 @@ const createAdminDashboardPreview = (originalContent: string): string => {
 
 // Next.js app compiler - dynamic JSX parser
 const compileNextJsApp = (files: Record<string, string>, css: string): string => {
-  let pageContent = files['app/page.tsx'] || files['src/app/page.tsx'] || '';
+  // Prefer src/app/page.tsx over app/page.tsx for content
+  let pageContent = files['src/app/page.tsx'] || files['app/page.tsx'] || '';
   
   // Check if page.tsx only contains a redirect - if so, try to find the actual content page
   if (pageContent.includes('redirect(') && pageContent.includes('return null')) {
@@ -322,26 +332,8 @@ const compileNextJsApp = (files: Record<string, string>, css: string): string =>
     }
   }
   
-  // Final fallback
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Next.js App - Live Preview</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>${css}</style>
-</head>
-<body>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50">
-    <div class="text-center">
-      <h1 class="text-4xl font-bold text-gray-900 mb-4">▲ Next.js App</h1>
-      <p class="text-gray-600">Built with SwiStack</p>
-    </div>
-  </div>
-</body>
-</html>`;
+  // Final fallback: no placeholder content
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>${css}</style></head><body></body></html>`;
 };
 
 // Vue.js app compiler - optimized for speed
@@ -547,8 +539,11 @@ export default function LivePreview({
   fileTree, 
   activeFile, 
   activeFileContent, 
-  className = '' 
+  className = '',
+  previewKey,
+  projectId
 }: LivePreviewProps) {
+  const { httpClient } = useAuth();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -556,13 +551,56 @@ export default function LivePreview({
   const [isHotReloadEnabled, setIsHotReloadEnabled] = useState(true);
   const [compileTime, setCompileTime] = useState<number>(0);
   const [errorDetails, setErrorDetails] = useState<string>('');
+  const lastHtmlRef = useRef<string>('');
+  const errorHandlerRef = useRef<(event: any) => void | null>(null);
+  const storageKey = previewKey ? `swistack:lastPreviewHTML:${previewKey}` : null;
+
+  // On mount, hydrate iframe with last preview HTML from sessionStorage
+  useEffect(() => {
+    if (!iframeRef.current) return;
+    if (!storageKey) return;
+    try {
+      const cached = sessionStorage.getItem(storageKey);
+      if (cached && cached.length > 0) {
+        lastHtmlRef.current = cached;
+        iframeRef.current.srcdoc = cached;
+        setIsLoading(false);
+        return;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    
+    // If no cached HTML and we have a projectId, seed from backend compiled HTML
+    const seedFromServer = async () => {
+      if (!projectId) return;
+      try {
+        const resp = await httpClient.getRaw(`/api/preview/project/${projectId}/html`);
+        if (resp.ok) {
+          const html = await resp.text();
+          if (html && iframeRef.current) {
+            iframeRef.current.srcdoc = html;
+            lastHtmlRef.current = html;
+            setIsLoading(false);
+            if (storageKey) {
+              try { sessionStorage.setItem(storageKey, html); } catch {}
+            }
+          }
+        }
+      } catch (e) {
+        // ignore; preview will render when files arrive
+      }
+    };
+    seedFromServer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
 
   const updatePreview = useCallback(() => {
     if (!iframeRef.current) return;
 
     const startTime = Date.now();
     try {
-      setIsLoading(true);
+      // Only show loader if content will actually change
       setHasError(false);
       setErrorDetails('');
       
@@ -578,32 +616,57 @@ export default function LivePreview({
       if (activeFile) console.log('📄 Active file:', activeFile);
       
       const compiledHtml = compileApp(files);
-      
-      // Write the compiled HTML to the iframe
-      const doc = iframeRef.current.contentDocument;
-      if (doc) {
-        doc.open();
-        doc.write(compiledHtml);
-        doc.close();
-        
-        // Handle iframe load
-        iframeRef.current.onload = () => {
-          const endTime = Date.now();
-          setCompileTime(endTime - startTime);
-          setIsLoading(false);
-          setLastUpdate(endTime);
-        };
-        
-        // Handle errors
-        const errorHandler = (event: any) => {
-          console.error('Preview error:', event.error);
-          setHasError(true);
-          setIsLoading(false);
-        };
-        
-        if (iframeRef.current.contentWindow) {
-          iframeRef.current.contentWindow.addEventListener('error', errorHandler);
+
+      // Avoid flicker: if the compiled HTML is empty, keep existing content
+      if (!compiledHtml || compiledHtml.trim().length === 0) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Skip writing if nothing actually changed
+      if (compiledHtml === lastHtmlRef.current) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Content will change; show loader
+      setIsLoading(true);
+
+      // Write using srcdoc to avoid document.open/close flicker
+      iframeRef.current.srcdoc = compiledHtml;
+
+      // Clean up any prior error handler
+      if (iframeRef.current.contentWindow && errorHandlerRef.current) {
+        iframeRef.current.contentWindow.removeEventListener('error', errorHandlerRef.current as any);
+        errorHandlerRef.current = null;
+      }
+
+      // Handle iframe load exactly once per update
+      const onLoad = () => {
+        const endTime = Date.now();
+        setCompileTime(endTime - startTime);
+        setIsLoading(false);
+        setLastUpdate(endTime);
+        lastHtmlRef.current = compiledHtml;
+        // Persist to sessionStorage for stability on remounts
+        if (storageKey) {
+          try { sessionStorage.setItem(storageKey, compiledHtml); } catch {}
         }
+        if (iframeRef.current) {
+          iframeRef.current.onload = null;
+        }
+      };
+      iframeRef.current.onload = onLoad;
+
+      // Handle errors (replace previous handler)
+      const errorHandler = (event: any) => {
+        console.error('Preview error:', event.error);
+        setHasError(true);
+        setIsLoading(false);
+      };
+      errorHandlerRef.current = errorHandler;
+      if (iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.addEventListener('error', errorHandler);
       }
     } catch (error) {
       console.error('Failed to compile preview:', error);
@@ -620,7 +683,7 @@ export default function LivePreview({
     // Debounce the update to avoid too many rapid updates
     const timeoutId = setTimeout(() => {
       updatePreview();
-    }, 100); // 100ms debounce for faster response
+    }, 300); // Slightly longer debounce to reduce flashing
     
     return () => clearTimeout(timeoutId);
   }, [updatePreview, isHotReloadEnabled]);
@@ -748,7 +811,7 @@ export default function LivePreview({
           title="Live Preview"
         />
         
-        {isLoading && (
+        {isLoading && lastHtmlRef.current === '' && (
           <div className="absolute inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
             <div className="text-center text-gray-400">
               <RefreshCw className="w-8 h-8 mx-auto mb-2 animate-spin" />

@@ -173,14 +173,20 @@ export class LivePreviewService {
     template: string, 
     files: Record<string, string>
   ): string {
-    // Check template name first
+    // Check template name first (prefer Next.js app router under src/)
     if (template.includes('nextjs') || template.includes('next')) return 'nextjs';
     if (template.includes('react')) return 'react';
     if (template.includes('vue')) return 'vue';
     if (template.includes('express') || template.includes('api')) return 'express';
 
     // Check file structure
-    if (files['app/page.tsx'] || files['pages/index.tsx'] || files['next.config.js']) {
+    if (
+      files['src/app/page.tsx'] ||
+      files['app/page.tsx'] ||
+      files['src/pages/index.tsx'] ||
+      files['pages/index.tsx'] ||
+      files['next.config.js']
+    ) {
       return 'nextjs';
     }
     if (files['src/App.tsx'] || files['src/App.jsx']) {
@@ -203,10 +209,16 @@ export class LivePreviewService {
     project: PreviewableProject, 
     files: Record<string, string>
   ): string {
-    const pageContent = files['app/page.tsx'] || files['pages/index.tsx'] || '';
+    const pageContent =
+      files['src/app/page.tsx'] ||
+      files['app/page.tsx'] ||
+      files['src/pages/index.tsx'] ||
+      files['pages/index.tsx'] ||
+      '';
     
     if (!pageContent) {
-      return this.generateProjectPlaceholder(project, 'Next.js');
+      // No placeholder: return a blank page when entry content isn't available
+      return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head><body></body></html>`;
     }
 
     try {
@@ -495,4 +507,3 @@ export class LivePreviewService {
       .trim();
   }
 }
-

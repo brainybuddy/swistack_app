@@ -45,9 +45,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
         <Providers>
-          <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-            {children}
-          </div>
+          {children}
         </Providers>
       </body>
     </html>

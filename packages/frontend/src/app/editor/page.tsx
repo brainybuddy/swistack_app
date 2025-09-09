@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -63,7 +63,6 @@ import CollaborationPanel from '@/components/collaboration/CollaborationPanel';
 import ChatPanel from '@/components/collaboration/ChatPanel';
 import AIAssistantEnhanced from '@/components/ai/AIAssistantEnhanced';
 import Terminal from '@/components/ide/Terminal';
-import AIPreviewAssistant from '@/components/ai/AIPreviewAssistant';
 import NotificationSystem from '@/components/notifications/NotificationSystem';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 import LivePreview from '@/components/preview/LivePreview';
@@ -100,7 +99,6 @@ export default function EditorPage() {
   
   // Logout state
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   
   // Tools state
@@ -151,6 +149,12 @@ export default function EditorPage() {
   const [isDraggingBottom, setIsDraggingBottom] = useState(false);
   const [showBottomPanel, setShowBottomPanel] = useState(false);
   const [activeBottomTab, setActiveBottomTab] = useState<'terminal' | 'team-chat'>('terminal');
+  // Dev server state
+  const [devUrl, setDevUrl] = useState<string | null>(null);
+  const [devStatus, setDevStatus] = useState<'stopped' | 'starting' | 'running' | 'error'>('stopped');
+  const [devError, setDevError] = useState<string | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const [devLogs, setDevLogs] = useState<string[]>([]);
 
   // File tree with realistic React App template
   // Helper function to find a file in the tree by path
@@ -175,6 +179,144 @@ export default function EditorPage() {
   };
 
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
+
+  // Fetch dev server status for projects on load/switch
+  useEffect(() => {
+    const projectId = (template as any)?.id;
+    if (!projectId || isTemplate) {
+      setDevStatus('stopped');
+      setDevUrl(null);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await httpClient.get(`/api/devserver/status/${projectId}`);
+        if (res.success) {
+          const data: any = (res as any).data;
+          setDevStatus(data.status === 'running' ? 'running' : 'stopped');
+          setDevUrl(data.url || null);
+        }
+      } catch {}
+    })();
+  }, [template, isTemplate, httpClient]);
+
+  // Auto-start dev server once when entering a project editor if not running
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (isTemplate || autoStartedRef.current) return;
+    const projectId = (template as any)?.id;
+    if (!projectId) return;
+    (async () => {
+      try {
+        const st = await httpClient.get(`/api/devserver/status/${projectId}`);
+        if (st.success) {
+          const d: any = (st as any).data;
+          if (d.status !== 'running') {
+            autoStartedRef.current = true;
+            setDevStatus('starting');
+            await httpClient.post(`/api/devserver/start/${projectId}`);
+          }
+        }
+      } catch {/* ignore */}
+    })();
+  }, [isTemplate, template, httpClient]);
+
+  const startDevServer = async () => {
+    const projectId = (template as any)?.id;
+    if (!projectId || isTemplate) return;
+    try {
+      setDevError(null);
+      setDevStatus('starting');
+      const res = await httpClient.post(`/api/devserver/start/${projectId}`);
+      if (res.success) {
+        const data: any = (res as any).data;
+        if (data?.url) setDevUrl(data.url);
+        // Check status once after starting
+        const st = await httpClient.get(`/api/devserver/status/${projectId}`);
+        if (st.success) {
+          const d: any = (st as any).data;
+          setDevStatus(d.status === 'running' ? 'running' : 'starting');
+          if (d.url) setDevUrl(d.url);
+        }
+      } else {
+        setDevStatus('error');
+        setDevError(res.error || 'Failed to start development server');
+      }
+    } catch (e: any) {
+      setDevStatus('error');
+      setDevError(e?.message || 'Failed to start development server');
+    }
+  };
+
+  const stopDevServer = async () => {
+    const projectId = (template as any)?.id;
+    if (!projectId || isTemplate) return;
+    try {
+      setDevError(null);
+      const res = await httpClient.post(`/api/devserver/stop/${projectId}`);
+      if (res.success) {
+        setDevStatus('stopped');
+        setDevUrl(null);
+      } else {
+        setDevStatus('error');
+        setDevError(res.error || 'Failed to stop development server');
+      }
+    } catch (e: any) {
+      setDevStatus('error');
+      setDevError(e?.message || 'Failed to stop development server');
+    }
+  };
+
+  // Logs: poll when modal is open
+  useEffect(() => {
+    if (!showLogs || isTemplate) return;
+    const projectId = (template as any)?.id;
+    if (!projectId) return;
+
+    let cancelled = false;
+    const fetchLogs = async () => {
+      try {
+        const res = await httpClient.get(`/api/devserver/logs/${projectId}`);
+        if (res.success && !cancelled) {
+          const data: any = (res as any).data;
+          setDevLogs(data.logs || []);
+          if (data.url) setDevUrl(data.url);
+          // Only advance status forward; don't downgrade starting -> stopped
+          if (data.status === 'running' && devStatus !== 'running') {
+            setDevStatus('running');
+          }
+        }
+      } catch {}
+    };
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [showLogs, isTemplate, template, httpClient, devStatus]);
+
+  // While starting, poll status periodically until running
+  useEffect(() => {
+    if (isTemplate) return;
+    const projectId = (template as any)?.id;
+    if (!projectId) return;
+    if (devStatus !== 'starting') return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const res = await httpClient.get(`/api/devserver/status/${projectId}`);
+        if (!res.success) return;
+        const data: any = (res as any).data;
+        if (cancelled) return;
+        if (data.status === 'running') {
+          setDevStatus('running');
+          setDevUrl(data.url || null);
+          clearInterval(interval);
+        }
+      } catch {/* ignore */}
+    }, 2000);
+
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [devStatus, isTemplate, template, httpClient]);
   
   // Fetch project file tree for saved projects
   const fetchProjectFileTree = async (projectId: string) => {
@@ -476,6 +618,37 @@ export default function EditorPage() {
     }
   }, [activeTab, openTabs, fileTree]);
 
+  // Ensure preview has content: prefetch main Next.js page for projects
+  const [prefetchedMainPage, setPrefetchedMainPage] = useState(false);
+  useEffect(() => {
+    if (isTemplate || prefetchedMainPage || !template?.id || fileTree.length === 0) return;
+
+    // Preferred Next.js entry files
+    const candidates = [
+      'src/app/page.tsx',
+      'app/page.tsx',
+      'src/pages/index.tsx',
+      'pages/index.tsx'
+    ];
+
+    const target = candidates.find((p) => {
+      const node = findFileByPath(fileTree, p);
+      return !!node; // exists in tree
+    });
+
+    if (!target) return;
+
+    const node = findFileByPath(fileTree, target);
+    if (!node || node.type !== 'file') return;
+
+    // If content is missing or empty, fetch it so LivePreview can render it
+    if (!node.content || node.content.length === 0) {
+      loadProjectFileContent(target).finally(() => setPrefetchedMainPage(true));
+    } else {
+      setPrefetchedMainPage(true);
+    }
+  }, [isTemplate, template?.id, fileTree]);
+
 
   // Keyboard shortcuts for panels
   useEffect(() => {
@@ -619,13 +792,24 @@ export default function EditorPage() {
       });
 
       if (response.success && response.data) {
+        // Normalize project from API shape { project } vs direct
+        const createdProject: any = (response as any).data.project || (response as any).data;
         setIsTemplate(false);
         setShowSaveModal(false);
         setRestrictedFeatureRequested(null);
         
         // Update the URL to reflect this is now a project
-        const newUrl = `/editor?project=${encodeURIComponent(JSON.stringify(response.data))}`;
+        const newUrl = `/editor?project=${encodeURIComponent(JSON.stringify(createdProject))}`;
         window.history.replaceState({}, '', newUrl);
+        
+        // Try to start the dev server automatically (Nix-based if available)
+        try {
+          if (createdProject?.id) {
+            await httpClient.post(`/api/devserver/start/${createdProject.id}`);
+          }
+        } catch (e) {
+          console.warn('Dev server auto-start failed (non-blocking):', e);
+        }
         
         // Show success dialog
         setCreatedProjectName(projectName);
@@ -862,10 +1046,107 @@ export default function EditorPage() {
                   <Save className="w-3 h-3 inline mr-1" />
                   Save All
                 </button>
-                <button className="px-3 py-1 text-xs bg-teal-600 hover:bg-teal-700 rounded transition-colors">
-                  <Play className="w-3 h-3 inline mr-1" />
-                  Run
-                </button>
+                {devStatus !== 'running' ? (
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={startDevServer}
+                      className={`px-3 py-1 text-xs rounded transition-colors ${devStatus === 'starting' ? 'bg-teal-700 opacity-75' : 'bg-teal-600 hover:bg-teal-700'}`}
+                      disabled={devStatus === 'starting'}
+                      title="Start Next.js dev server"
+                    >
+                      <Play className="w-3 h-3 inline mr-1" />
+                      {devStatus === 'starting' ? 'Starting…' : 'Run'}
+                    </button>
+                    <button
+                      onClick={() => setShowLogs(true)}
+                      className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                      title={devStatus === 'starting' ? 'View logs while starting' : 'View last logs'}
+                    >
+                      Logs
+                    </button>
+                    {devStatus === 'error' && (
+                      <button
+                        onClick={async () => {
+                          const projectId = (template as any)?.id;
+                          if (!projectId) return;
+                          try {
+                            setDevError(null);
+                            setDevStatus('starting');
+                            const res = await httpClient.post(`/api/devserver/restart/${projectId}`);
+                            if (!res.success) {
+                              setDevStatus('error');
+                              setDevError(res.error || 'Failed to restart');
+                            }
+                          } catch (e: any) {
+                            setDevStatus('error');
+                            setDevError(e?.message || 'Failed to restart');
+                          }
+                        }}
+                        className="px-3 py-1 text-xs bg-yellow-700 hover:bg-yellow-600 rounded transition-colors"
+                        title="Restart after error"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    {devUrl && (
+                      <a
+                        href={devUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 rounded transition-colors"
+                        title="Open development server"
+                      >
+                        Open
+                      </a>
+                    )}
+                    <button
+                      onClick={() => setShowLogs(true)}
+                      className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+                      title="View logs"
+                    >
+                      Logs
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const projectId = (template as any)?.id;
+                        if (!projectId) return;
+                        try {
+                          setDevError(null);
+                          setDevStatus('starting');
+                          const res = await httpClient.post(`/api/devserver/restart/${projectId}`);
+                          if (res.success) {
+                            const statusRes = await httpClient.get(`/api/devserver/status/${projectId}`);
+                            if (statusRes.success) {
+                              const d: any = (statusRes as any).data;
+                              setDevStatus(d.status === 'running' ? 'running' : 'starting');
+                              if (d.url) setDevUrl(d.url);
+                            }
+                          } else {
+                            setDevStatus('error');
+                            setDevError(res.error || 'Failed to restart');
+                          }
+                        } catch (e: any) {
+                          setDevStatus('error');
+                          setDevError(e?.message || 'Failed to restart');
+                        }
+                      }}
+                      className="px-3 py-1 text-xs bg-yellow-700 hover:bg-yellow-600 rounded transition-colors"
+                      title="Restart development server"
+                    >
+                      Restart
+                    </button>
+                    <button
+                      onClick={stopDevServer}
+                      className="px-3 py-1 text-xs bg-red-700 hover:bg-red-600 rounded transition-colors"
+                      title="Stop development server"
+                    >
+                      Stop
+                    </button>
+                  </div>
+                )}
               </>
             )}
             <div className="flex items-center space-x-1">
@@ -892,6 +1173,22 @@ export default function EditorPage() {
               <div className="w-px h-4 bg-gray-600 mx-1" />
               
               <NotificationSystem className="" />
+              {!isTemplate && (
+                <div className="text-xs text-gray-400 mr-2 whitespace-nowrap">
+                  {devStatus === 'running' && devUrl && (
+                    <span title="Dev server running">
+                      <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+                      <a href={devUrl} target="_blank" rel="noopener noreferrer" className="underline">{devUrl}</a>
+                    </span>
+                  )}
+                  {devStatus === 'starting' && (
+                    <span title="Starting dev server" className="text-yellow-400">Starting…</span>
+                  )}
+                  {devStatus === 'error' && devError && (
+                    <span title={devError} className="text-red-400">Dev error</span>
+                  )}
+                </div>
+              )}
               <button 
                 onClick={() => setShowProjectSettings(!showProjectSettings)}
                 className={`p-2 rounded transition-colors ${
@@ -1366,14 +1663,15 @@ export default function EditorPage() {
 
               {/* Tool Content */}
               <div className="flex-1 p-4 overflow-auto">
-                {activeRightTab === 'preview' && (
-                  <LivePreview
-                    fileTree={fileTree}
-                    activeFile={activeTab}
-                    activeFileContent={editorValue}
-                    className="h-full -m-4"
-                  />
-                )}
+                {/* Keep LivePreview mounted to prevent iframe reset/flicker */}
+                <LivePreview
+                  fileTree={fileTree}
+                  activeFile={activeTab}
+                  activeFileContent={editorValue}
+                  previewKey={(template?.id as string) || (template?.key as string) || 'editor'}
+                  projectId={!isTemplate ? (template?.id as string) : undefined}
+                  className={`h-full -m-4 ${activeRightTab === 'preview' ? '' : 'hidden'}`}
+                />
                 
                 {activeRightTab === 'collaboration' && (
                   isTemplate ? (
@@ -1758,13 +2056,46 @@ export default function EditorPage() {
           </div>
         )}
         
-        {/* AI Preview Assistant */}
-        <AIPreviewAssistant 
-          projectId={mockProject.id}
-          isVisible={showAIAssistant}
-          onToggle={() => setShowAIAssistant(!showAIAssistant)}
-        />
       </div>
+
+      {/* Logs Modal */}
+      {showLogs && !isTemplate && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 border border-gray-700 rounded-lg w-[800px] max-w-[95vw] max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-3 border-b border-gray-700">
+              <div className="text-sm text-gray-300">Development Server Logs</div>
+              <div className="flex items-center space-x-2">
+                {devUrl && (
+                  <a href={devUrl} target="_blank" rel="noopener noreferrer" className="text-xs underline text-gray-400">{devUrl}</a>
+                )}
+                <button onClick={() => setShowLogs(false)} className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded text-sm">Close</button>
+              </div>
+            </div>
+            <div className="p-3 overflow-auto" style={{maxHeight: '60vh'}}>
+              <pre className="text-xs text-gray-300 whitespace-pre-wrap">
+                {devLogs.length ? devLogs.join('\n') : 'No logs yet. If the server is starting, logs will appear here shortly.'}
+              </pre>
+            </div>
+            <div className="p-2 border-t border-gray-700 flex items-center justify-between text-xs text-gray-400">
+              <div>Status: {devStatus}</div>
+              <div className="space-x-2">
+                <button
+                  onClick={() => setDevLogs([])}
+                  className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => { /* manual refresh happens via polling; noop */ }}
+                  className="px-2 py-1 bg-gray-800 hover:bg-gray-700 rounded"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </SocketProvider>
     </ProtectedRoute>
   );

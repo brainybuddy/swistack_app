@@ -1,7 +1,7 @@
 import { Model } from 'objection';
 import { db } from '../config/database';
 import bcrypt from 'bcryptjs';
-import { authConfig } from '../config/auth';
+import { getAuthConfig } from '../config/auth';
 
 export interface DatabaseUser {
   id: string;
@@ -82,6 +82,7 @@ export class User extends Model {
 
   // Hash password before saving
   static async hashPassword(password: string): Promise<string> {
+    const authConfig = getAuthConfig();
     return await bcrypt.hash(password, authConfig.bcrypt.saltRounds);
   }
 

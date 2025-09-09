@@ -230,7 +230,13 @@ node_modules
    */
   private generateDockerfile(project: PreviewableProject): string {
     const isNextJs = project.template.includes('next') || 
-                    project.files.some(f => f.path === 'next.config.js' || f.path === 'app/page.tsx');
+                    project.files.some(f => (
+                      f.path === 'next.config.js' ||
+                      f.path === 'src/app/page.tsx' ||
+                      f.path === 'app/page.tsx' ||
+                      f.path === 'src/pages/index.tsx' ||
+                      f.path === 'pages/index.tsx'
+                    ));
     
     if (isNextJs) {
       return `
@@ -310,8 +316,16 @@ CMD ["serve", "-s", ".", "-l", "3000"]
     }
 
     // Detect project type and set up appropriate scripts
-    const isNextJs = project.template.includes('next') || 
-                    project.files.some(f => f.path === 'next.config.js' || f.path === 'app/page.tsx');
+    const isNextJs =
+      project.template.includes('next') ||
+      project.files.some(
+        (f) =>
+          f.path === 'next.config.js' ||
+          f.path === 'src/app/page.tsx' ||
+          f.path === 'app/page.tsx' ||
+          f.path === 'src/pages/index.tsx' ||
+          f.path === 'pages/index.tsx'
+      );
     
     if (isNextJs) {
       packageJson.dependencies = {

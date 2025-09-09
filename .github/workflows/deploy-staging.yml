@@ -116,7 +116,6 @@ jobs:
     if: github.event_name != 'pull_request'
     environment: 
       name: staging
-      url: ${{ secrets.PRODUCTION_URL }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

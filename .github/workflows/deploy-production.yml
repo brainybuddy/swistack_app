@@ -122,7 +122,6 @@ jobs:
     needs: build-and-push
     environment: 
       name: production
-      url: ${{ secrets.PRODUCTION_URL }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

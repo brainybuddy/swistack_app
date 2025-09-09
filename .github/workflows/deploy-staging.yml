@@ -124,13 +124,13 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
-          port: ${{ secrets.STAGING_PORT || 22 }}
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          port: ${{ secrets.PRODUCTION_PORT || 22 }}
           script: |
             # Navigate to deployment directory
-            cd ${{ secrets.STAGING_DEPLOYMENT_PATH || '/opt/swistack-staging' }}
+            cd ${{ secrets.DEPLOYMENT_PATH || '/opt/swistack' }}
             
             # Pull latest images
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -144,30 +144,30 @@ jobs:
             NODE_ENV=staging
             PORT=3001
             
-            # Database Configuration
-            DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
-            POSTGRES_DB=${{ secrets.STAGING_POSTGRES_DB }}
-            POSTGRES_USER=${{ secrets.STAGING_POSTGRES_USER }}
-            POSTGRES_PASSWORD=${{ secrets.STAGING_POSTGRES_PASSWORD }}
+            # Database Configuration (using production secrets for testing)
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            POSTGRES_DB=${{ secrets.POSTGRES_DB }}
+            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
+            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
             
             # Redis Configuration
-            REDIS_URL=${{ secrets.STAGING_REDIS_URL }}
+            REDIS_URL=${{ secrets.REDIS_URL }}
             
             # Authentication
-            JWT_SECRET=${{ secrets.STAGING_JWT_SECRET }}
-            GOOGLE_CLIENT_ID=${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET=${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
-            GITHUB_CLIENT_ID=${{ secrets.STAGING_GITHUB_CLIENT_ID }}
-            GITHUB_CLIENT_SECRET=${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+            GITHUB_CLIENT_ID=${{ secrets.GITHUB_CLIENT_ID }}
+            GITHUB_CLIENT_SECRET=${{ secrets.GITHUB_CLIENT_SECRET }}
             
             # MinIO/S3 Configuration
-            MINIO_ENDPOINT=${{ secrets.STAGING_MINIO_ENDPOINT }}
-            MINIO_ACCESS_KEY=${{ secrets.STAGING_MINIO_ACCESS_KEY }}
-            MINIO_SECRET_KEY=${{ secrets.STAGING_MINIO_SECRET_KEY }}
-            MINIO_BUCKET=${{ secrets.STAGING_MINIO_BUCKET }}
+            MINIO_ENDPOINT=${{ secrets.MINIO_ENDPOINT }}
+            MINIO_ACCESS_KEY=${{ secrets.MINIO_ACCESS_KEY }}
+            MINIO_SECRET_KEY=${{ secrets.MINIO_SECRET_KEY }}
+            MINIO_BUCKET=${{ secrets.MINIO_BUCKET }}
             
             # API URLs
-            NEXT_PUBLIC_API_URL=${{ secrets.STAGING_API_URL }}
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
             
             # Other Configuration
             CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}

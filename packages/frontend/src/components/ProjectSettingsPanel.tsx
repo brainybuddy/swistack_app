@@ -25,7 +25,7 @@ import {
   Terminal,
   Zap
 } from 'lucide-react';
-import { ProjectSettings, ContainerConfig, BuildConfig, Project } from '@swistack/shared';
+import { ProjectSettings, ContainerConfig, BuildConfig, Project } from '../../types/shared';
 import VirusScanStatus from './security/VirusScanStatus';
 import ProjectInvitationManager from './invitations/ProjectInvitationManager';
 

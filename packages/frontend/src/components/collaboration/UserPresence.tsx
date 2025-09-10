@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CollaborativeUser } from '@swistack/shared';
+import { CollaborativeUser } from '../../types/shared';
 
 interface UserPresenceProps {
   users: CollaborativeUser[];

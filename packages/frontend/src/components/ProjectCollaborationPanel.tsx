@@ -22,7 +22,7 @@ import {
   Link,
   MoreVertical
 } from 'lucide-react';
-import { Project, ProjectMember, InviteMemberRequest } from '@swistack/shared';
+import { Project, ProjectMember, InviteMemberRequest } from '../../types/shared';
 
 interface ProjectCollaborationPanelProps {
   project: Project;

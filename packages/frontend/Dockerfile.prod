@@ -11,7 +11,10 @@ COPY tsconfig.json ./
 COPY packages/frontend/package*.json ./packages/frontend/
 COPY packages/shared/package*.json ./packages/shared/
 
-RUN npm ci --only=production
+RUN npm ci --ignore-scripts
+
+# Install dev dependencies for building
+RUN npm install --save-dev typescript @types/node
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -22,8 +25,11 @@ COPY packages/shared ./packages/shared
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Build shared package first
-RUN npm run build:shared
+# Build shared package first (run from shared directory to use correct tsconfig)
+WORKDIR /app/packages/shared
+RUN npm run build
+
+WORKDIR /app
 
 # Set environment variable for build
 ARG NEXT_PUBLIC_API_URL
@@ -37,6 +43,7 @@ FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+RUN apk add --no-cache libc6-compat
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
@@ -50,6 +57,8 @@ USER nextjs
 
 EXPOSE 3000
 
-ENV PORT 3000
+# Cloud Run will set PORT; default to 3000 locally
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
 CMD ["node", "packages/frontend/server.js"]

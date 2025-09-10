@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ActivityFeedItem, CollaborativeUser } from '@swistack/shared';
+import { ActivityFeedItem, CollaborativeUser } from '../../types/shared';
 import { formatDistanceToNow } from 'date-fns';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 

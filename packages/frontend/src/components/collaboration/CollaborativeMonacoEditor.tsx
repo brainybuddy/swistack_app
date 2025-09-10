@@ -5,7 +5,7 @@ import { Editor, OnMount, OnChange } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCollaboration } from '@/contexts/CollaborationContext';
-import { OperationalTransform, TextOperation } from '@swistack/shared';
+import { OperationalTransform, TextOperation } from '../../types/shared';
 import CollaborativeCursor from './CollaborativeCursor';
 import UserPresence from './UserPresence';
 

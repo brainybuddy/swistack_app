@@ -27,7 +27,17 @@ import {
   Check,
   Plus
 } from 'lucide-react';
-import { ProjectFile } from '@swistack/shared';
+// ProjectFile type inlined to avoid import issues
+interface ProjectFile {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  type: 'file' | 'directory';
+  size?: number;
+  lastModified?: Date;
+  parentId?: string;
+}
 import { ProjectActivityFeed } from './activity/ProjectActivityFeed';
 
 interface FileExplorerProps {

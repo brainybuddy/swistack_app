@@ -36,7 +36,7 @@ import {
   ChevronDown,
   Tag
 } from 'lucide-react';
-import { ProjectTemplate, CreateProjectRequest } from '@swistack/shared';
+import { ProjectTemplate, CreateProjectRequest } from '../../types/shared';
 
 interface TemplatesViewProps {
   onSelectTemplate?: (template: ProjectTemplate) => void;

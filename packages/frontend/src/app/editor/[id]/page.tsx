@@ -59,7 +59,7 @@ export default function ProjectEditorPage() {
         try {
           const authTest = await httpClient.get('/api/projects/my');
           console.log('✅ Auth test successful:', authTest?.data?.success);
-        } catch (authError) {
+        } catch (authError: any) {
           console.error('❌ Auth test failed:', authError?.response?.status, authError?.response?.data);
           throw new Error(`Authentication failed: ${authError?.response?.data?.error || 'Unknown auth error'}`);
         }
@@ -68,7 +68,7 @@ export default function ProjectEditorPage() {
         console.log('📡 Making API call to:', `/api/projects/${identifier}`);
         let response = await httpClient.get(`/api/projects/${identifier}`);
         
-        console.log('✅ API Response received:', response?.status, response?.statusText);
+        console.log('✅ API Response received:', response);
         console.log('📋 Response data structure:', {
           hasData: !!response?.data,
           success: response?.data?.success,
@@ -120,18 +120,10 @@ export default function ProjectEditorPage() {
           console.error('❌ Project not found:', errorMsg);
           
           // Try to provide helpful error context
-          if (response?.status === 401 || response?.status === 403) {
-            setError('Access denied. Please log in and try again.');
-            setTimeout(() => router.replace('/login'), 2000);
-          } else if (response?.status === 404) {
-            setError(`Project '${identifier}' not found. It may have been deleted or you don't have access.`);
-            setTimeout(() => router.replace('/workspace'), 3000);
-          } else {
-            setError(`Unable to load project: ${errorMsg}`);
-            setTimeout(() => router.replace('/workspace'), 3000);
-          }
+          setError(`Unable to load project: ${errorMsg}`);
+          setTimeout(() => router.replace('/workspace'), 3000);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('💥 Error loading project:', error);
         
         let errorMessage = 'Unknown error';

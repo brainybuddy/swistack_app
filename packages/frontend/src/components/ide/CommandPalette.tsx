@@ -23,7 +23,7 @@ import {
   Keyboard,
   Command as CommandIcon
 } from 'lucide-react';
-import { Command, CommandPaletteItem } from '@swistack/shared';
+import { Command, CommandPaletteItem } from '../../types/shared';
 
 interface CommandPaletteProps {
   isOpen: boolean;

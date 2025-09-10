@@ -25,29 +25,35 @@ export default function TestWebSocketPage() {
     // Setup test listeners
     const cleanupFns: (() => void)[] = [];
 
-    cleanupFns.push(on('ai:thinking', () => {
+    const thinkingCleanup = on('ai:thinking', () => {
       addLog('🤔 AI is thinking...');
-    }));
+    });
+    if (thinkingCleanup) cleanupFns.push(thinkingCleanup);
 
-    cleanupFns.push(on('ai:actionStarted', (data) => {
+    const actionStartedCleanup = on('ai:actionStarted', (data) => {
       addLog(`🚀 Action started: ${JSON.stringify(data)}`);
-    }));
+    });
+    if (actionStartedCleanup) cleanupFns.push(actionStartedCleanup);
 
-    cleanupFns.push(on('ai:actionCompleted', (data) => {
+    const actionCompletedCleanup = on('ai:actionCompleted', (data) => {
       addLog(`✅ Action completed: ${JSON.stringify(data)}`);
-    }));
+    });
+    if (actionCompletedCleanup) cleanupFns.push(actionCompletedCleanup);
 
-    cleanupFns.push(on('ai:actionFailed', (data) => {
+    const actionFailedCleanup = on('ai:actionFailed', (data) => {
       addLog(`❌ Action failed: ${JSON.stringify(data)}`);
-    }));
+    });
+    if (actionFailedCleanup) cleanupFns.push(actionFailedCleanup);
 
-    cleanupFns.push(on('file:changed', (data) => {
+    const fileChangedCleanup = on('file:changed', (data) => {
       addLog(`📁 File changed: ${data.filePath}`);
-    }));
+    });
+    if (fileChangedCleanup) cleanupFns.push(fileChangedCleanup);
 
-    cleanupFns.push(on('terminal:output', (data) => {
+    const terminalOutputCleanup = on('terminal:output', (data) => {
       addLog(`💻 Terminal: ${data.data}`);
-    }));
+    });
+    if (terminalOutputCleanup) cleanupFns.push(terminalOutputCleanup);
 
     return () => {
       cleanupFns.forEach(cleanup => cleanup());

@@ -630,19 +630,35 @@ router.get('/google/callback',
       
       // Redirect to frontend with tokens in URL params
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const redirectUrl = new URL('/auth/callback', frontendUrl);
-      redirectUrl.searchParams.set('token', user.tokens.accessToken);
-      redirectUrl.searchParams.set('refreshToken', user.tokens.refreshToken);
-      redirectUrl.searchParams.set('provider', 'google');
+      console.log('Frontend URL:', frontendUrl);
       
-      console.log('Redirecting to:', redirectUrl.toString());
-      res.redirect(redirectUrl.toString());
+      try {
+        const redirectUrl = new URL('/auth/callback', frontendUrl);
+        if (redirectUrl && redirectUrl.searchParams) {
+          redirectUrl.searchParams.set('token', user.tokens.accessToken);
+          redirectUrl.searchParams.set('refreshToken', user.tokens.refreshToken);
+          redirectUrl.searchParams.set('provider', 'google');
+        }
+        
+        console.log('Redirecting to:', redirectUrl.toString());
+        res.redirect(redirectUrl.toString());
+      } catch (urlError) {
+        console.error('URL construction error:', urlError);
+        throw urlError;
+      }
     } catch (error) {
       console.error('Google OAuth callback error:', error);
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const errorUrl = new URL('/auth/error', frontendUrl);
-      errorUrl.searchParams.set('error', 'OAuth login failed');
-      res.redirect(errorUrl.toString());
+      try {
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const errorUrl = new URL('/auth/error', frontendUrl);
+        if (errorUrl && errorUrl.searchParams) {
+          errorUrl.searchParams.set('error', 'OAuth login failed');
+        }
+        res.redirect(errorUrl.toString());
+      } catch (fallbackError) {
+        console.error('Fallback redirect error:', fallbackError);
+        res.status(500).json({ error: 'OAuth login failed' });
+      }
     }
   }
 );
@@ -659,19 +675,40 @@ router.get('/github/callback',
     try {
       const user = req.user as any;
       
+      if (!user || !user.tokens) {
+        throw new Error('No user or tokens received from OAuth');
+      }
+      
       // Redirect to frontend with tokens in URL params
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const redirectUrl = new URL('/auth/callback', frontendUrl);
-      redirectUrl.searchParams.set('token', user.tokens.accessToken);
-      redirectUrl.searchParams.set('refreshToken', user.tokens.refreshToken);
-      redirectUrl.searchParams.set('provider', 'github');
+      console.log('Frontend URL:', frontendUrl);
       
-      res.redirect(redirectUrl.toString());
+      try {
+        const redirectUrl = new URL('/auth/callback', frontendUrl);
+        if (redirectUrl && redirectUrl.searchParams) {
+          redirectUrl.searchParams.set('token', user.tokens.accessToken);
+          redirectUrl.searchParams.set('refreshToken', user.tokens.refreshToken);
+          redirectUrl.searchParams.set('provider', 'github');
+        }
+        
+        res.redirect(redirectUrl.toString());
+      } catch (urlError) {
+        console.error('URL construction error:', urlError);
+        throw urlError;
+      }
     } catch (error) {
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      const errorUrl = new URL('/auth/error', frontendUrl);
-      errorUrl.searchParams.set('error', 'OAuth login failed');
-      res.redirect(errorUrl.toString());
+      console.error('GitHub OAuth callback error:', error);
+      try {
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const errorUrl = new URL('/auth/error', frontendUrl);
+        if (errorUrl && errorUrl.searchParams) {
+          errorUrl.searchParams.set('error', 'OAuth login failed');
+        }
+        res.redirect(errorUrl.toString());
+      } catch (fallbackError) {
+        console.error('Fallback redirect error:', fallbackError);
+        res.status(500).json({ error: 'OAuth login failed' });
+      }
     }
   }
 );

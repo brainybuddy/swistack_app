@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, ShieldCheck, ShieldAlert, AlertTriangle, Info } from 'lucide-react';
-import { ScanStats, VirusScanResponse } from '@swistack/shared';
+import { ScanStats, VirusScanResponse } from '../../types/shared';
 
 interface VirusScanStatusProps {
   className?: string;

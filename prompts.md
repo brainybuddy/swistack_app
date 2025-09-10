@@ -290,7 +290,7 @@ Frontend (packages/frontend):
 
 Infrastructure:
 - Create Docker Swarm configuration for production deployment
-- Add CI/CD pipeline with GitHub Actions for automated testing and deployment
+- Add CI/CD pipeline with Google Cloud Build + Cloud Run for automated testing and deployment
 - Implement secrets management and environment variable security
 - Add SSL certificate automation with Let's Encrypt
 - Create database migration and backup automation scripts
@@ -303,4 +303,3 @@ Integration:
 - Automated backup and disaster recovery procedures
 - Production-ready security with SSL, secrets management, and vulnerability scanning
 - Scalable infrastructure ready for thousands of concurrent users"
-

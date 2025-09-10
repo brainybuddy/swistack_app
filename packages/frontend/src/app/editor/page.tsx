@@ -529,7 +529,7 @@ export default function EditorPage() {
             const parts = file.path.split('/');
             let currentPath = '';
             
-            parts.forEach((part, index) => {
+            parts.forEach((part: string, index: number) => {
               const previousPath = currentPath;
               currentPath = currentPath ? `${currentPath}/${part}` : part;
               

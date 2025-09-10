@@ -3,17 +3,33 @@
 import { createContext, useContext, useReducer, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { 
   AuthState, 
-  AuthAction, 
   AuthUser, 
   AuthTokens, 
-  AuthApiClient,
   createTokenStorage,
   isTokenExpired,
   shouldRefreshToken,
   HttpClient
-} from '@swistack/shared';
+} from '../types/shared';
 
-interface AuthContextType extends AuthState {
+// AuthAction and AuthApiClient defined locally
+type AuthAction = 
+  | { type: 'LOGIN_START' }
+  | { type: 'LOGIN_SUCCESS'; payload: { user: AuthUser; tokens: AuthTokens } }
+  | { type: 'LOGIN_FAILURE'; payload: string }
+  | { type: 'LOGOUT' }
+  | { type: 'UPDATE_USER'; payload: AuthUser }
+  | { type: 'SET_TOKENS'; payload: AuthTokens }
+  | { type: 'CLEAR_ERROR' };
+
+interface AuthContextType {
+  // AuthState properties
+  user: AuthUser | null;
+  tokens: AuthTokens | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+  
+  // Methods
   login: (email: string, password: string) => Promise<void>;
   register: (userData: {
     email: string;

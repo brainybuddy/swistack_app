@@ -19,7 +19,7 @@ import {
   Terminal,
   GitMerge
 } from 'lucide-react';
-import { GitOperationRequest, GitOperationResponse } from '@swistack/shared';
+import { GitOperationRequest, GitOperationResponse } from '../../types/shared';
 
 interface GitPanelProps {
   projectId: string;

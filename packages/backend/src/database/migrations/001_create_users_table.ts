@@ -1,11 +1,17 @@
 import type { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
-  // Enable uuid-ossp extension if not already enabled
-  await knex.raw('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+  // Try to enable uuid-ossp extension, fallback to gen_random_uuid() if not available
+  try {
+    await knex.raw('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+    console.log('✅ uuid-ossp extension enabled');
+  } catch (error) {
+    console.warn('⚠️ uuid-ossp extension not available, using gen_random_uuid() instead:', error);
+  }
   
   return knex.schema.createTable('users', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('uuid_generate_v4()'));
+    // Use gen_random_uuid() as fallback if uuid-ossp is not available
+    table.uuid('id').primary().defaultTo(knex.raw('COALESCE(uuid_generate_v4(), gen_random_uuid())'));
     table.string('email').unique().notNullable();
     table.string('username').unique().notNullable();
     table.string('firstName').notNullable();

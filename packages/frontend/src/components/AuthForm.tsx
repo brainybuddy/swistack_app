@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { LoginRequest, RegisterRequest } from '@swistack/shared';
+// Types inlined to avoid import issues
+type LoginRequest = { email: string; password: string };
+type RegisterRequest = { email: string; username: string; firstName: string; lastName: string; password: string; confirmPassword: string };
 import { Mail, Lock, User, Sparkles, ArrowRight, Loader2, Eye, EyeOff, Github } from 'lucide-react';
 import Link from 'next/link';
 
 interface AuthFormProps {
   mode: 'login' | 'register';
-  onSubmit: (data: LoginRequest | RegisterRequest) => Promise<void>;
+  onSubmit: (data: any) => Promise<void>;
   isLoading: boolean;
   error?: string | null;
 }

@@ -54,7 +54,8 @@ export default function OAuthCallbackPage() {
         await setTokens({
           accessToken: token,
           refreshToken: refreshToken,
-          expiresIn: expiresIn
+          expiresIn: expiresIn,
+          tokenType: 'Bearer'
         });
 
         setStatus('success');

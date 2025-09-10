@@ -8,14 +8,15 @@ COPY packages/shared/package*.json ./packages/shared/
 COPY packages/backend/package*.json ./packages/backend/
 COPY packages/frontend/package*.json ./packages/frontend/
 
-RUN npm ci
+# Install dependencies without running lifecycle scripts yet
+RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY packages/shared ./packages/shared
 COPY packages/backend ./packages/backend
 COPY packages/frontend ./packages/frontend
 
-# Build shared package first
+# Copy sources and then build shared package (now scripts can run)
 RUN npm run build:shared
 
 # Development stage

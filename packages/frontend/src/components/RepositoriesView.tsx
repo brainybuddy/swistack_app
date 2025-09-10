@@ -31,7 +31,7 @@ import {
   Eye,
   Download
 } from 'lucide-react';
-import { Project, GetProjectsResponse } from '@swistack/shared';
+import { Project, GetProjectsResponse } from '../../types/shared';
 
 export default function RepositoriesView() {
   const router = useRouter();

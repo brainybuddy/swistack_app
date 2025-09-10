@@ -11,8 +11,8 @@ import {
   ClientToServerEvents,
   InterServerEvents,
   SocketData
-} from '@swistack/shared';
-import { OperationalTransform, TextOperation } from '@swistack/shared';
+} from '../types/shared';
+import { OperationalTransform, TextOperation } from '../types/shared';
 
 interface CollaborationContextType {
   socket: Socket<ServerToClientEvents, ClientToServerEvents> | null;

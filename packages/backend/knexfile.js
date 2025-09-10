@@ -28,10 +28,24 @@ module.exports = {
   },
   production: {
     client: 'postgresql',
-    connection: {
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }
-    },
+    connection: (() => {
+      const url = process.env.DATABASE_URL;
+      // Prefer full connection string if provided
+      if (typeof url === 'string' && url.length > 0) {
+        return {
+          connectionString: url,
+          // Only force TLS for managed providers that require it
+          ssl: url.includes('neon.tech') ? { rejectUnauthorized: false } : false,
+        };
+      }
+      // Fallback to discrete environment variables
+      const host = process.env.POSTGRES_HOST || 'localhost';
+      const port = Number(process.env.POSTGRES_PORT || 5432);
+      const database = process.env.POSTGRES_DB || 'swistack';
+      const user = process.env.POSTGRES_USER || 'swistack';
+      const password = process.env.POSTGRES_PASSWORD || 'swistack';
+      return { host, port, database, user, password, ssl: false };
+    })(),
     migrations: {
       directory: './dist/database/migrations'
     },

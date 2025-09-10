@@ -4,13 +4,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import AuthForm from '../../components/AuthForm';
 import ProtectedRoute from '../../components/ProtectedRoute';
-import { LoginRequest } from '@swistack/shared';
-
 export default function LoginPage() {
   const { login, isLoading, error, clearError } = useAuth();
   const router = useRouter();
 
-  const handleLogin = async (data: LoginRequest) => {
+  const handleLogin = async (data: { email: string; password: string }) => {
     try {
       clearError();
       await login(data.email, data.password);

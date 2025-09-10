@@ -7,14 +7,13 @@ COPY tsconfig.json ./
 COPY packages/backend/package*.json ./packages/backend/
 COPY packages/shared/package*.json ./packages/shared/
 
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 COPY packages/backend ./packages/backend
 COPY packages/shared ./packages/shared
 
-RUN npm run build:shared
-RUN npm run build:backend
-
 EXPOSE 3001
 
-CMD ["npm", "run", "start", "-w", "@swistack/backend"]
+# Run the server using tsx (already installed as dependency)
+WORKDIR /app
+CMD ["npx", "tsx", "packages/backend/src/server.ts"]

@@ -3,100 +3,455 @@ import type { Knex } from 'knex';
 export async function seed(knex: Knex): Promise<void> {
   const targetKey = 'elearning-platform';
 
-  // Try to reuse files from the lite template if available
-  const base = await knex('project_templates')
-    .whereIn('key', ['elearning-frontend-lite', 'elearning-frontend-lite-v2'])
-    .first();
-
   // Always remove any existing record for idempotency
   await knex('project_templates').where('key', targetKey).del();
 
   const now = new Date();
 
-  // If we have an existing template, clone its JSON fields
-  if (base) {
-    await knex('project_templates').insert({
-      name: 'E-Learning Platform',
-      key: targetKey,
-      description: base.description || 'Frontend e-learning platform UI (Next.js + Tailwind)',
-      category: base.category || 'frontend',
-      language: base.language || 'typescript',
-      framework: base.framework || 'nextjs',
-      dependencies: typeof base.dependencies === 'string' ? base.dependencies : JSON.stringify(base.dependencies || {}),
-      scripts: typeof base.scripts === 'string' ? base.scripts : JSON.stringify(base.scripts || {}),
-      config: typeof base.config === 'string' ? base.config : JSON.stringify(base.config || {}),
-      dockerImage: base.dockerImage || 'node:18-alpine',
-      files: typeof base.files === 'string' ? base.files : JSON.stringify(base.files || []),
-      icon: base.icon || '📚',
-      version: '1.0.2',
-      isActive: true,
-      isOfficial: true,
-      createdBy: base.createdBy || null,
-      createdAt: now,
-      updatedAt: now,
-    });
-    console.log('✅ Upserted E-Learning Platform from existing lite template');
-    return;
-  }
-
-  // Fallback: minimal inline template with footer to guarantee visibility
+  // Next.js E-Learning Platform Template
   const files = [
     {
       path: 'package.json',
       type: 'file',
       content: JSON.stringify({
         name: 'elearning-platform',
+        version: '0.1.0',
         private: true,
-        version: '1.0.0',
-        scripts: { dev: 'next dev', build: 'next build', start: 'next start' },
-        dependencies: {
-          next: '^14.0.4',
-          react: '^18.2.0',
-          'react-dom': '^18.2.0',
-          typescript: '^5.3.2',
-          tailwindcss: '^3.4.0',
-          autoprefixer: '^10.4.0',
-          postcss: '^8.4.0',
+        scripts: {
+          dev: 'next dev',
+          build: 'next build',
+          start: 'next start',
+          lint: 'next lint'
         },
-      }, null, 2),
+        dependencies: {
+          next: '14.0.4',
+          react: '^18.2.0',
+          'react-dom': '^18.2.0'
+        },
+        devDependencies: {
+          '@types/node': '^20',
+          '@types/react': '^18',
+          '@types/react-dom': '^18',
+          autoprefixer: '^10.0.1',
+          eslint: '^8',
+          'eslint-config-next': '14.0.4',
+          postcss: '^8',
+          tailwindcss: '^3.3.0',
+          typescript: '^5'
+        }
+      }, null, 2)
     },
-    { path: 'postcss.config.js', type: 'file', content: `module.exports = { plugins: { tailwindcss: {}, autoprefixer: {} } };\n` },
-    { path: 'tailwind.config.js', type: 'file', content: `module.exports = { content: ['src/**/*.{ts,tsx}'], theme: {extend:{}}, plugins: [] };\n` },
-    { path: 'next.config.js', type: 'file', content: `module.exports = { experimental: { appDir: true } };\n` },
-    { path: 'src', type: 'directory' },
-    { path: 'src/app', type: 'directory' },
-    { path: 'src/app/globals.css', type: 'file', content: `@tailwind base;@tailwind components;@tailwind utilities;\nhtml,body{height:100%}` },
+    {
+      path: 'tsconfig.json',
+      type: 'file',
+      content: JSON.stringify({
+        compilerOptions: {
+          target: 'es5',
+          lib: ['dom', 'dom.iterable', 'esnext'],
+          allowJs: true,
+          skipLibCheck: true,
+          strict: true,
+          noEmit: true,
+          esModuleInterop: true,
+          module: 'esnext',
+          moduleResolution: 'bundler',
+          resolveJsonModule: true,
+          isolatedModules: true,
+          jsx: 'preserve',
+          incremental: true,
+          plugins: [{ name: 'next' }],
+          paths: { '@/*': ['./src/*'] }
+        },
+        include: ['next-env.d.ts', '**/*.ts', '**/*.tsx', '.next/types/**/*.ts'],
+        exclude: ['node_modules']
+      }, null, 2)
+    },
+    {
+      path: 'next.config.js',
+      type: 'file',
+      content: `/** @type {import('next').NextConfig} */
+const nextConfig = {}
+
+module.exports = nextConfig`
+    },
+    {
+      path: 'tailwind.config.ts',
+      type: 'file',
+      content: `import type { Config } from 'tailwindcss'
+
+const config: Config = {
+  content: [
+    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  theme: {
+    extend: {
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+        'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
+      },
+    },
+  },
+  plugins: [],
+}
+export default config`
+    },
+    {
+      path: 'postcss.config.js',
+      type: 'file',
+      content: `module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}`
+    },
     {
       path: 'src/app/layout.tsx',
       type: 'file',
-      content: `import './globals.css';\nexport default function RootLayout({ children }: { children: React.ReactNode }) {\n  return (<html lang='en'><body className='min-h-screen bg-gray-50'>{children}</body></html>);\n}\n`,
+      content: `import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'LearnHub - E-Learning Platform',
+  description: 'Learn without limits with our comprehensive e-learning platform',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en">
+      <body className={inter.className}>{children}</body>
+    </html>
+  )
+}`
+    },
+    {
+      path: 'src/app/globals.css',
+      type: 'file',
+      content: `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}`
     },
     {
       path: 'src/app/page.tsx',
       type: 'file',
-      content: `export default function Home(){return (<div className='min-h-screen'>\n  <header className='bg-white border-b'><div className='max-w-7xl mx-auto h-16 px-4 flex items-center justify-between'><b className='text-blue-700'>EduPlatform</b><nav className='hidden md:flex items-center gap-6 text-sm'><a href='#popular' className='hover:text-white'>Courses</a><a href='#' className='hover:text-white'>Dashboard</a><a href='#' className='bg-blue-600 text-white px-3 py-1.5 rounded'>Login</a></nav></div></header>\n  <section className='bg-gradient-to-r from-blue-600 to-indigo-700 text-white text-center py-16'><h1 className='text-4xl font-extrabold mb-3'>Learn Without Limits</h1><p className='opacity-95 mb-6'>Expert-led courses, hands-on projects, beautiful UI.</p><a href='#popular' className='inline-block bg-white text-blue-700 font-semibold px-6 py-3 rounded shadow hover:bg-blue-50'>Explore Courses</a></section>\n  <section className='bg-white'><div className='max-w-7xl mx-auto px-4 py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-center'><div><div className='text-4xl font-extrabold text-blue-600'>50,000</div><div className='text-gray-600'>Active Students</div></div><div><div className='text-4xl font-extrabold text-blue-600'>1,200</div><div className='text-gray-600'>Instructors</div></div><div><div className='text-4xl font-extrabold text-blue-600'>2,800</div><div className='text-gray-600'>Courses</div></div><div><div className='text-4xl font-extrabold text-blue-600'>98%</div><div className='text-gray-600'>Success</div></div></div></section>\n  <section className='bg-gray-50' id='popular'><div className='max-w-7xl mx-auto px-4 py-12'><h2 className='text-2xl font-bold mb-6'>Popular Courses</h2><div className='grid sm:grid-cols-2 lg:grid-cols-3 gap-6'><div className='bg-white border rounded-lg p-5'><div className='h-28 rounded bg-gradient-to-r from-slate-100 to-slate-200 mb-4'/><h3 className='font-semibold'>Web Development Bootcamp</h3><p className='text-sm text-gray-300 mb-3'>By Sarah Johnson</p><div className='flex items-center justify-between'><span className='font-bold text-blue-600'>$89</span><button className='text-sm bg-blue-600 text-white px-3 py-1.5 rounded'>Enroll</button></div></div><div className='bg-white border rounded-lg p-5'><div className='h-28 rounded bg-gradient-to-r from-slate-100 to-slate-200 mb-4'/><h3 className='font-semibold'>Data Science with Python</h3><p className='text-sm text-gray-300 mb-3'>By Michael Chen</p><div className='flex items-center justify-between'><span className='font-bold text-blue-600'>$99</span><button className='text-sm bg-blue-600 text-white px-3 py-1.5 rounded'>Enroll</button></div></div><div className='bg-white border rounded-lg p-5'><div className='h-28 rounded bg-gradient-to-r from-slate-100 to-slate-200 mb-4'/><h3 className='font-semibold'>UI/UX Design Fundamentals</h3><p className='text-sm text-gray-300 mb-3'>By Emily Carter</p><div className='flex items-center justify-between'><span className='font-bold text-blue-600'>$79</span><button className='text-sm bg-blue-600 text-white px-3 py-1.5 rounded'>Enroll</button></div></div></div></div></section>\n  <section className='bg-white'><div className='max-w-7xl mx-auto px-4 py-12'><h2 className='text-2xl font-bold mb-6'>What learners say</h2><div className='grid sm:grid-cols-2 lg:grid-cols-3 gap-6'><div className='bg-gray-50 border rounded-lg p-5'><p className='italic text-gray-700'>“The UI is clean and fast to customize.”</p><div className='mt-3 text-sm text-gray-300'>— Jamie</div></div><div className='bg-gray-50 border rounded-lg p-5'><p className='italic text-gray-700'>“I shipped a polished demo in hours.”</p><div className='mt-3 text-sm text-gray-300'>— Omar</div></div><div className='bg-gray-50 border rounded-lg p-5'><p className='italic text-gray-700'>“Perfect starting point for client projects.”</p><div className='mt-3 text-sm text-gray-300'>— Leah</div></div></div></div></section>\n  <section className='bg-gradient-to-r from-blue-600 to-indigo-700'><div className='max-w-7xl mx-auto px-4 py-12 text-center text-white'><h2 className='text-2xl sm:text-3xl font-bold mb-2'>Start learning today</h2><p className='opacity-90 mb-4'>Pick a template, save as project, and build.</p><a href='#popular' className='inline-block bg-white text-blue-700 font-semibold px-6 py-3 rounded hover:bg-blue-50'>Browse Courses</a></div></section>\n  <footer className='bg-white border-t'><div className='max-w-7xl mx-auto px-4 py-8 grid sm:grid-cols-2 md:grid-cols-4 gap-6 text-sm text-gray-300'><div><div className='font-semibold text-white mb-2'>Product</div><ul className='space-y-1'><li><a href='#' className='hover:text-white'>Features</a></li><li><a href='#popular' className='hover:text-white'>Courses</a></li><li><a href='#' className='hover:text-white'>Pricing</a></li></ul></div><div><div className='font-semibold text-white mb-2'>Resources</div><ul className='space-y-1'><li><a href='#' className='hover:text-white'>Blog</a></li><li><a href='#' className='hover:text-white'>Guides</a></li><li><a href='#' className='hover:text-white'>Help Center</a></li></ul></div><div><div className='font-semibold text-white mb-2'>Company</div><ul className='space-y-1'><li><a href='#' className='hover:text-white'>About</a></li><li><a href='#' className='hover:text-white'>Careers</a></li><li><a href='#' className='hover:text-white'>Contact</a></li></ul></div><div><div className='font-semibold text-white mb-2'>Legal</div><ul className='space-y-1'><li><a href='#' className='hover:text-white'>Privacy</a></li><li><a href='#' className='hover:text-white'>Terms</a></li><li><a href='#' className='hover:text-white'>License</a></li></ul></div></div><div className='border-t py-4 text-xs text-gray-400 text-center'>© 2024 EduPlatform. All rights reserved.</div></footer>\n</div>)}\n`,
+      content: `import CourseCard from '@/components/CourseCard'
+import Header from '@/components/Header'
+
+export default function Home() {
+  const courses = [
+    {
+      id: 1,
+      title: 'Web Development Bootcamp',
+      instructor: 'John Doe',
+      description: 'Learn modern web technologies from scratch',
+      image: '/api/placeholder/400/200',
+      price: 89.99,
+      rating: 4.8,
+      students: 12453
     },
+    {
+      id: 2,
+      title: 'Data Science with Python',
+      instructor: 'Jane Smith',
+      description: 'Master data analysis and machine learning',
+      image: '/api/placeholder/400/200',
+      price: 79.99,
+      rating: 4.9,
+      students: 8234
+    },
+    {
+      id: 3,
+      title: 'UI/UX Design Masterclass',
+      instructor: 'Mike Johnson',
+      description: 'Create beautiful and intuitive interfaces',
+      image: '/api/placeholder/400/200',
+      price: 69.99,
+      rating: 4.7,
+      students: 6789
+    }
+  ]
+
+  return (
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <Header />
+      
+      {/* Hero Section */}
+      <section className="py-16 px-4">
+        <div className="max-w-7xl mx-auto text-center">
+          <h1 className="text-5xl font-bold text-gray-900 mb-6">
+            Learn Without Limits
+          </h1>
+          <p className="text-xl text-gray-600 mb-8">
+            Start, switch, or advance your career with thousands of courses
+          </p>
+          <div className="flex justify-center space-x-4">
+            <input
+              type="text"
+              placeholder="What do you want to learn?"
+              className="px-6 py-3 rounded-lg border border-gray-300 w-96 focus:outline-none focus:border-indigo-500"
+            />
+            <button className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors">
+              Search
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Courses */}
+      <section className="py-16 px-4 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-3xl font-bold text-gray-900 mb-8">Featured Courses</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {courses.map(course => (
+              <CourseCard key={course.id} course={course} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Stats Section */}
+      <section className="py-16 px-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8 text-center">
+            <div>
+              <div className="text-4xl font-bold text-indigo-600">10K+</div>
+              <div className="text-gray-600 mt-2">Active Students</div>
+            </div>
+            <div>
+              <div className="text-4xl font-bold text-indigo-600">500+</div>
+              <div className="text-gray-600 mt-2">Courses</div>
+            </div>
+            <div>
+              <div className="text-4xl font-bold text-indigo-600">100+</div>
+              <div className="text-gray-600 mt-2">Expert Instructors</div>
+            </div>
+            <div>
+              <div className="text-4xl font-bold text-indigo-600">95%</div>
+              <div className="text-gray-600 mt-2">Success Rate</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  )
+}`
+    },
+    {
+      path: 'src/components/Header.tsx',
+      type: 'file',
+      content: `'use client'
+
+import Link from 'next/link'
+
+export default function Header() {
+  return (
+    <header className="bg-white shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="flex justify-between items-center">
+          <Link href="/" className="flex items-center">
+            <svg
+              className="w-8 h-8 text-indigo-600 mr-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+              />
+            </svg>
+            <h1 className="text-2xl font-bold text-gray-900">LearnHub</h1>
+          </Link>
+          
+          <nav className="flex items-center space-x-6">
+            <Link href="/courses" className="text-gray-700 hover:text-indigo-600 transition-colors">
+              Courses
+            </Link>
+            <Link href="/my-learning" className="text-gray-700 hover:text-indigo-600 transition-colors">
+              My Learning
+            </Link>
+            <Link href="/community" className="text-gray-700 hover:text-indigo-600 transition-colors">
+              Community
+            </Link>
+            <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+              Sign In
+            </button>
+          </nav>
+        </div>
+      </div>
+    </header>
+  )
+}`
+    },
+    {
+      path: 'src/components/CourseCard.tsx',
+      type: 'file',
+      content: `'use client'
+
+interface Course {
+  id: number
+  title: string
+  instructor: string
+  description: string
+  image: string
+  price: number
+  rating: number
+  students: number
+}
+
+export default function CourseCard({ course }: { course: Course }) {
+  return (
+    <div className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
+      <div className="h-48 bg-gradient-to-br from-indigo-400 to-purple-500"></div>
+      <div className="p-6">
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">{course.title}</h3>
+        <p className="text-gray-600 mb-2">by {course.instructor}</p>
+        <p className="text-gray-500 text-sm mb-4">{course.description}</p>
+        
+        <div className="flex items-center mb-4">
+          <div className="flex items-center">
+            <span className="text-yellow-500">★★★★★</span>
+            <span className="text-sm text-gray-600 ml-2">
+              {course.rating} ({course.students.toLocaleString()} students)
+            </span>
+          </div>
+        </div>
+        
+        <div className="flex justify-between items-center">
+          <span className="text-2xl font-bold text-indigo-600">
+            \${course.price}
+          </span>
+          <button 
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+            onClick={() => alert('Enrollment feature coming soon!')}
+          >
+            Enroll Now
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}`
+    },
+    {
+      path: '.gitignore',
+      type: 'file',
+      content: `# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts`
+    }
   ];
 
   await knex('project_templates').insert({
     name: 'E-Learning Platform',
     key: targetKey,
-    description: 'Frontend e-learning platform UI (Next.js + Tailwind)',
-    category: 'frontend',
+    description: 'Full-stack Next.js e-learning platform with TypeScript and Tailwind CSS',
+    category: 'Educational',
     language: 'typescript',
     framework: 'nextjs',
-    dependencies: JSON.stringify({ next: '^14.0.4', react: '^18.2.0', 'react-dom': '^18.2.0', typescript: '^5.3.2', tailwindcss: '^3.4.0', autoprefixer: '^10.4.0', postcss: '^8.4.0' }),
-    scripts: JSON.stringify({ dev: 'next dev', build: 'next build', start: 'next start' }),
-    config: JSON.stringify({ nodeVersion: '18', packageManager: 'npm' }),
+    dependencies: JSON.stringify({
+      next: '14.0.4',
+      react: '^18.2.0',
+      'react-dom': '^18.2.0',
+      '@types/node': '^20',
+      '@types/react': '^18',
+      '@types/react-dom': '^18',
+      autoprefixer: '^10.0.1',
+      eslint: '^8',
+      'eslint-config-next': '14.0.4',
+      postcss: '^8',
+      tailwindcss: '^3.3.0',
+      typescript: '^5'
+    }),
+    scripts: JSON.stringify({
+      dev: 'next dev',
+      build: 'next build',
+      start: 'next start',
+      lint: 'next lint'
+    }),
+    config: JSON.stringify({
+      port: 3000,
+      framework: 'nextjs',
+      language: 'typescript'
+    }),
     dockerImage: 'node:18-alpine',
     files: JSON.stringify(files),
     icon: '📚',
-    version: '1.0.2',
+    version: '2.0.0',
     isActive: true,
     isOfficial: true,
+    createdBy: null,
     createdAt: now,
     updatedAt: now,
   });
-  console.log('✅ Inserted fallback E-Learning Platform template');
+  
+  console.log('✅ Inserted Next.js E-Learning Platform template');
 }
-

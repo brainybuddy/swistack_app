@@ -1,8 +1,0 @@
-steps:
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['build', '-f', 'packages/frontend/Dockerfile.prod', '-t', 'gcr.io/$PROJECT_ID/swistack-frontend', '.']
-- name: 'gcr.io/cloud-builders/docker'
-  args: ['push', 'gcr.io/$PROJECT_ID/swistack-frontend']
-
-images:
-- 'gcr.io/$PROJECT_ID/swistack-frontend'

@@ -571,6 +571,96 @@ export default function EditorPage() {
     }
   }, [template, isTemplate]);
 
+  // Load project files from database when opening a saved project
+  useEffect(() => {
+    if (isTemplate || !template?.id) return;
+    
+    const loadProjectFiles = async () => {
+      try {
+        console.log('Loading project files for project:', template.id);
+        const response = await httpClient.get(`/api/projects/${template.id}/files`);
+        
+        if (response.success && response.data) {
+          const files = (response.data as any).files || [];
+          console.log(`Loaded ${files.length} files from database`);
+          
+          if (files.length > 0) {
+            // Convert flat file list to tree structure
+            const buildFileTree = (files: any[]): FileNode[] => {
+              const pathMap = new Map<string, FileNode>();
+              const rootNodes: FileNode[] = [];
+              
+              // Sort files by path to ensure parents are created before children
+              files.sort((a, b) => a.path.localeCompare(b.path));
+              
+              files.forEach((file) => {
+                const parts = file.path.split('/');
+                let currentPath = '';
+                
+                parts.forEach((part: string, index: number) => {
+                  const previousPath = currentPath;
+                  currentPath = currentPath ? `${currentPath}/${part}` : part;
+                  
+                  if (!pathMap.has(currentPath)) {
+                    const isFile = index === parts.length - 1;
+                    const node: FileNode = {
+                      name: part,
+                      type: isFile ? 'file' : 'folder',
+                      language: isFile ? getFileLanguage(file.path) : undefined,
+                      content: isFile ? file.content : undefined,
+                      children: isFile ? undefined : []
+                    };
+                    pathMap.set(currentPath, node);
+                    
+                    if (previousPath) {
+                      const parent = pathMap.get(previousPath);
+                      if (parent && parent.children) {
+                        parent.children.push(node);
+                      }
+                    } else {
+                      rootNodes.push(node);
+                    }
+                  } else if (index === parts.length - 1) {
+                    // Update content for existing file node
+                    const node = pathMap.get(currentPath);
+                    if (node) {
+                      node.content = file.content;
+                    }
+                  }
+                });
+              });
+              
+              return rootNodes;
+            };
+            
+            const getFileLanguage = (path: string): string => {
+              if (path.endsWith('.tsx')) return 'typescript';
+              if (path.endsWith('.ts')) return 'typescript';
+              if (path.endsWith('.jsx')) return 'javascript';
+              if (path.endsWith('.js')) return 'javascript';
+              if (path.endsWith('.css')) return 'css';
+              if (path.endsWith('.scss')) return 'scss';
+              if (path.endsWith('.json')) return 'json';
+              if (path.endsWith('.html')) return 'html';
+              if (path.endsWith('.md')) return 'markdown';
+              return 'text';
+            };
+            
+            const fileTree = buildFileTree(files);
+            console.log('Built file tree with', fileTree.length, 'root nodes');
+            setFileTree(fileTree);
+          } else {
+            console.log('No files found in database for project');
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load project files:', error);
+      }
+    };
+    
+    loadProjectFiles();
+  }, [template, isTemplate, httpClient]);
+
   // Lazy-load file content when opening a file without content (projects)
   const loadProjectFileContent = async (path: string) => {
     try {

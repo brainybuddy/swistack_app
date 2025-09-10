@@ -5,7 +5,6 @@ import {
   AuthState, 
   AuthUser, 
   AuthTokens, 
-  createTokenStorage,
   isTokenExpired,
   shouldRefreshToken,
   HttpClient
@@ -125,17 +124,10 @@ function authReducer(state: AuthState, action: AuthAction): AuthState {
   }
 }
 
-const authConfig = {
-  apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
-  tokenStorageKey: 'swistack_token',
-  refreshTokenKey: 'swistack_refresh_token',
-  autoRefresh: true,
-  refreshThreshold: 5,
-};
-
-const authClient = new AuthApiClient(authConfig);
-const httpClient = new HttpClient(authConfig);
-const storage = createTokenStorage();
+// Use HttpClient directly for all API calls
+const httpClient = new HttpClient(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
+// Use localStorage directly instead of the wrapper
+const storage = typeof window !== 'undefined' ? localStorage : null;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
@@ -143,7 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load user and tokens from storage on mount
   useEffect(() => {
-    console.log('AuthContext: Loading user from storage...');
+    console.log('AuthContext: Loading user from storage?...');
     loadUserFromStorage();
   }, []);
 
@@ -235,13 +227,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUserFromStorage = async () => {
     try {
-      console.log('Loading user from storage...');
+      console.log('Loading user from storage?...');
       cleanupCorruptedStorage(); // Clean up any corrupted data first
       dispatch({ type: 'AUTH_START' });
 
-      const accessToken = storage.getItem('swistack_token');
-      const refreshToken = storage.getItem('swistack_refresh_token');
-      const userStr = storage.getItem('swistack_user');
+      const accessToken = storage?.getItem('swistack_token');
+      const refreshToken = storage?.getItem('swistack_refresh_token');
+      const userStr = storage?.getItem('swistack_user');
 
       console.log('Storage items:', { 
         hasAccessToken: !!accessToken, 
@@ -286,11 +278,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (isTokenExpired(accessToken)) {
         // Try to refresh tokens
         try {
-          const response = await authClient.refreshToken({ refreshToken });
+          const response = await httpClient.post('/api/auth/refresh', { refreshToken });
           if (response.success && response.data) {
             const newTokens = response.data.tokens;
-            storage.setItem('swistack_token', newTokens.accessToken);
-            storage.setItem('swistack_refresh_token', newTokens.refreshToken);
+            storage?.setItem('swistack_token', newTokens.accessToken);
+            storage?.setItem('swistack_refresh_token', newTokens.refreshToken);
             
             dispatch({
               type: 'AUTH_SUCCESS',
@@ -331,15 +323,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       dispatch({ type: 'AUTH_START' });
 
-      const response = await authClient.login({ email, password });
+      const response = await httpClient.post('/api/auth/login', { email, password });
 
       if (response.success && response.data) {
         const { user, tokens } = response.data;
 
         // Store in localStorage
-        storage.setItem('swistack_token', tokens.accessToken);
-        storage.setItem('swistack_refresh_token', tokens.refreshToken);
-        storage.setItem('swistack_user', JSON.stringify(user));
+        storage?.setItem('swistack_token', tokens.accessToken);
+        storage?.setItem('swistack_refresh_token', tokens.refreshToken);
+        storage?.setItem('swistack_user', JSON.stringify(user));
 
         dispatch({
           type: 'AUTH_SUCCESS',
@@ -368,15 +360,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       dispatch({ type: 'AUTH_START' });
 
-      const response = await authClient.register(userData);
+      const response = await httpClient.post('/api/auth/register', userData);
 
       if (response.success && response.data) {
         const { user, tokens } = response.data;
 
         // Store in localStorage
-        storage.setItem('swistack_token', tokens.accessToken);
-        storage.setItem('swistack_refresh_token', tokens.refreshToken);
-        storage.setItem('swistack_user', JSON.stringify(user));
+        storage?.setItem('swistack_token', tokens.accessToken);
+        storage?.setItem('swistack_refresh_token', tokens.refreshToken);
+        storage?.setItem('swistack_user', JSON.stringify(user));
 
         dispatch({
           type: 'AUTH_SUCCESS',
@@ -396,11 +388,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      const refreshToken = storage.getItem('swistack_refresh_token');
+      const refreshToken = storage?.getItem('swistack_refresh_token');
       
       if (refreshToken) {
         // Attempt to logout from server
-        await authClient.logout(refreshToken);
+        await httpClient.post('/api/auth/logout', { refreshToken });
       }
     } catch (error) {
       // Ignore errors during logout - we'll clear local storage anyway
@@ -413,19 +405,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshTokens = async () => {
     try {
-      const refreshToken = storage.getItem('swistack_refresh_token');
+      const refreshToken = storage?.getItem('swistack_refresh_token');
       
       if (!refreshToken) {
         throw new Error('No refresh token available');
       }
 
-      const response = await authClient.refreshToken({ refreshToken });
+      const response = await httpClient.post('/api/auth/refresh', { refreshToken });
 
       if (response.success && response.data) {
         const newTokens = response.data.tokens;
         
-        storage.setItem('swistack_token', newTokens.accessToken);
-        storage.setItem('swistack_refresh_token', newTokens.refreshToken);
+        storage?.setItem('swistack_token', newTokens.accessToken);
+        storage?.setItem('swistack_refresh_token', newTokens.refreshToken);
 
         dispatch({
           type: 'AUTH_REFRESH_SUCCESS',
@@ -452,13 +444,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('No access token available');
       }
 
-      const response = await authClient.updateProfile(profileData, state.tokens.accessToken);
+      httpClient.setTokens(state.tokens);
+      const response = await httpClient.put('/api/auth/profile', profileData);
 
       if (response.success && response.data) {
         const updatedUser = response.data.user;
         
         // Update user in storage
-        storage.setItem('swistack_user', JSON.stringify(updatedUser));
+        storage?.setItem('swistack_user', JSON.stringify(updatedUser));
 
         dispatch({
           type: 'AUTH_SET_USER',
@@ -485,7 +478,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('Updated user object:', { ...updatedUser, avatar: updatedUser.avatar?.substring(0, 50) + '...' });
       
       // Update user in storage
-      storage.setItem('swistack_user', JSON.stringify(updatedUser));
+      storage?.setItem('swistack_user', JSON.stringify(updatedUser));
       console.log('User saved to localStorage');
 
       dispatch({
@@ -508,7 +501,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('No access token available');
       }
 
-      const response = await authClient.changePassword(passwordData, state.tokens.accessToken);
+      httpClient.setTokens(state.tokens);
+      const response = await httpClient.post('/api/auth/change-password', passwordData);
 
       if (!response.success) {
         throw new Error(response.error || 'Password change failed');
@@ -530,7 +524,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       dispatch({ type: 'AUTH_START' });
 
-      const response = await authClient.forgotPassword({ email });
+      const response = await httpClient.post('/api/auth/forgot-password', { email });
 
       if (!response.success) {
         throw new Error(response.error || 'Password reset request failed');
@@ -556,7 +550,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Passwords do not match');
       }
 
-      const response = await authClient.resetPassword({ token, password });
+      const response = await httpClient.post('/api/auth/reset-password', { token, password });
 
       if (!response.success) {
         throw new Error(response.error || 'Password reset failed');
@@ -587,12 +581,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'AUTH_START' });
 
       // Store tokens in localStorage
-      storage.setItem('swistack_token', tokens.accessToken);
-      storage.setItem('swistack_refresh_token', tokens.refreshToken);
+      storage?.setItem('swistack_token', tokens.accessToken);
+      storage?.setItem('swistack_refresh_token', tokens.refreshToken);
 
       // Fetch user data using the new access token
       console.log('Fetching user profile with token:', tokens.accessToken.substring(0, 50) + '...');
-      const userResponse = await authClient.getProfile(tokens.accessToken);
+      httpClient.setTokens(tokens);
+      const userResponse = await httpClient.get('/api/auth/profile');
       
       console.log('Profile response:', userResponse);
       
@@ -601,7 +596,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('Setting user data:', user);
         
         // Store user in localStorage
-        storage.setItem('swistack_user', JSON.stringify(user));
+        storage?.setItem('swistack_user', JSON.stringify(user));
 
         dispatch({
           type: 'AUTH_SUCCESS',
@@ -620,14 +615,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const clearStorage = () => {
-    storage.removeItem('swistack_token');
-    storage.removeItem('swistack_refresh_token');
-    storage.removeItem('swistack_user');
+    storage?.removeItem('swistack_token');
+    storage?.removeItem('swistack_refresh_token');
+    storage?.removeItem('swistack_user');
   };
 
   const cleanupCorruptedStorage = () => {
     try {
-      const userStr = storage.getItem('swistack_user');
+      const userStr = storage?.getItem('swistack_user');
       if (userStr === 'undefined' || userStr === 'null') {
         console.log('Cleaning up corrupted localStorage data');
         clearStorage();

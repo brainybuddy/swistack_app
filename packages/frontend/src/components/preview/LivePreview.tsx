@@ -40,7 +40,12 @@ const flattenFileTree = (nodes: FileNode[], path = ''): Record<string, string> =
 };
 
 // Dynamic app compiler based on template type
-const compileApp = (files: Record<string, string>): string => {
+const compileApp = (files: Record<string, string>, projectId?: string): string => {
+  // If no files and it's an e-learning platform project, show demo content
+  if (Object.keys(files).length === 0 && projectId) {
+    return createElearningPlatformDemo();
+  }
+  
   // Extract all CSS files for bundling
   const cssFiles = Object.entries(files).filter(([path]) => path.endsWith('.css'));
   const allCss = cssFiles.map(([, content]) => content).join('\n\n');

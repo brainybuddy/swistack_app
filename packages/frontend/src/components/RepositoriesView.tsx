@@ -35,7 +35,7 @@ import { Project, GetProjectsResponse } from '../../types/shared';
 
 export default function RepositoriesView() {
   const router = useRouter();
-  const { user, httpClient } = useAuth();
+  const { user, httpClient, tokens, isAuthenticated } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'public' | 'private'>('all');
   const [sortBy, setSortBy] = useState<'updatedAt' | 'name' | 'stars'>('updatedAt');
@@ -50,14 +50,33 @@ export default function RepositoriesView() {
   // Fetch projects on component mount
   useEffect(() => {
     fetchProjects();
-  }, [searchQuery, filterType, sortBy]);
+  }, [searchQuery, filterType, sortBy, user, httpClient, tokens, isAuthenticated]);
 
   const fetchProjects = async () => {
-    if (!user) return;
+    // Wait for authentication to be fully loaded
+    if (!isAuthenticated || !user || !httpClient || !tokens) {
+      console.log('Waiting for auth...', { 
+        isAuthenticated, 
+        user: !!user, 
+        httpClient: !!httpClient,
+        tokens: !!tokens 
+      });
+      // Don't show loading if we're just not authenticated
+      if (isAuthenticated === false) {
+        setIsLoading(false);
+        setError('Please log in to view your projects');
+      }
+      return;
+    }
     
     try {
       setIsLoading(true);
       setError(null);
+      
+      // Ensure httpClient has the latest tokens
+      if (tokens) {
+        httpClient.setTokens(tokens);
+      }
       
       const params = new URLSearchParams({
         page: '1',
@@ -72,7 +91,9 @@ export default function RepositoriesView() {
         // This will be handled in the filtering logic below
       }
 
+      console.log('Fetching projects with params:', params.toString());
       const response = await httpClient.get(`/api/projects/my?${params}`);
+      console.log('Projects response:', response);
       
       if (response.success && response.data) {
         const projectsData = response.data as GetProjectsResponse;
@@ -81,9 +102,14 @@ export default function RepositoriesView() {
       } else {
         throw new Error(response.error || 'Failed to fetch projects');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching projects:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch projects');
+      // Check if it's an auth error
+      if (err?.response?.status === 401 || err?.message?.includes('Access token is required')) {
+        setError('Access token is required - Please log in again');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to fetch projects');
+      }
     } finally {
       setIsLoading(false);
     }

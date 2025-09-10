@@ -23,11 +23,21 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com --project $G
 # Step 2: Build and push to Google Container Registry
 echo "2️⃣ Building and pushing Docker images..."
 
-# Backend - Build using Cloud Build directly from backend Dockerfile (no YAML)
+# Backend - Build using a temporary Cloud Build config (avoids Dockerfile path mount issues)
+cat > cloudbuild-backend-inline.yaml << EOF
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-f', 'packages/backend/Dockerfile', '-t', 'gcr.io/$GCP_PROJECT_ID/swistack-backend', '.']
+
+images:
+- 'gcr.io/$GCP_PROJECT_ID/swistack-backend'
+EOF
+
 gcloud builds submit . \
-  --file packages/backend/Dockerfile \
-  --tag gcr.io/$GCP_PROJECT_ID/swistack-backend \
+  --config cloudbuild-backend-inline.yaml \
   --project $GCP_PROJECT_ID
+
+rm -f cloudbuild-backend-inline.yaml
 
 # Frontend - Initial build (optional). We rely on the rebuild below to inject API URL.
 # You can skip this first build if desired.

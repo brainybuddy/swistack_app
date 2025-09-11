@@ -873,6 +873,14 @@ export default function EditorPage() {
 
   const handleSaveAsProject = async (projectName: string) => {
     try {
+      // Ensure auth token is attached if available
+      // (AuthContext may not always call setTokens before arbitrary calls)
+      // httpClient.setTokens(tokens) is safe even if undefined
+      try {
+        // @ts-ignore - optional chaining for context state
+        httpClient.setTokens?.((state as any)?.tokens || undefined);
+      } catch {}
+
       const response = await httpClient.post('/api/projects', {
         name: projectName,
         description: template?.description || 'Project created from template',
@@ -892,13 +900,11 @@ export default function EditorPage() {
         const newUrl = `/editor?project=${encodeURIComponent(JSON.stringify(createdProject))}`;
         window.history.replaceState({}, '', newUrl);
         
-        // Try to start the dev server automatically (Nix-based if available)
-        try {
-          if (createdProject?.id) {
-            await httpClient.post(`/api/devserver/start/${createdProject.id}`);
-          }
-        } catch (e) {
-          console.warn('Dev server auto-start failed (non-blocking):', e);
+        // Kick off dev server auto-start in background (don't block UI)
+        if (createdProject?.id) {
+          httpClient.post(`/api/devserver/start/${createdProject.id}`).catch((e: any) => {
+            console.warn('Dev server auto-start failed (non-blocking):', e);
+          });
         }
         
         // Show success dialog

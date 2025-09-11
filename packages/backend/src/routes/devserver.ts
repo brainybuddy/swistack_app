@@ -75,6 +75,52 @@ router.post('/start/:projectId', authMiddleware, async (req, res) => {
 });
 
 /**
+ * Get installation status for a project
+ */
+router.get('/install-status/:projectId', authMiddleware, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'User not authenticated' });
+    }
+
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(projectId)) {
+      return res.status(400).json({ success: false, error: 'Invalid project ID format' });
+    }
+
+    // Check if user has access to the project
+    const role = await ProjectModel.getMemberRole(projectId, userId);
+    if (!role) {
+      return res.status(403).json({ success: false, error: 'Access denied' });
+    }
+
+    // Get installation status
+    const installStatus = nixDevServerManager.getInstallStatus(projectId);
+    const serverStatus = await nixDevServerManager.getStatus(projectId);
+    const isRunning = nixDevServerManager.isRunning(projectId);
+
+    res.json({
+      success: true,
+      data: {
+        installStatus: installStatus || { status: 'not_started', message: 'Installation not started', timestamp: new Date() },
+        serverStatus,
+        isRunning
+      }
+    });
+  } catch (error) {
+    console.error('Error getting install status:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get install status'
+    });
+  }
+});
+
+/**
  * Stop development server for a project
  */
 router.post('/stop/:projectId', authMiddleware, async (req, res) => {
@@ -215,7 +261,7 @@ router.get('/status/:projectId', authMiddleware, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    let rawStatus = nixDevServerManager.getStatus(projectId) || devServerManager.getStatus(projectId) || 'stopped';
+    let rawStatus = await nixDevServerManager.getStatus(projectId) || devServerManager.getStatus(projectId) || 'stopped';
     let url = nixDevServerManager.getUrl(projectId) || devServerManager.getServerUrl(projectId);
     
     // If no URL but we have a port allocation, check if server is actually running
@@ -333,7 +379,7 @@ router.get('/logs/:projectId', authMiddleware, async (req, res) => {
       ...nixDevServerManager.getLogs(projectId),
       ...devServerManager.getLogs(projectId)
     ];
-    const rawStatus = nixDevServerManager.getStatus(projectId) || devServerManager.getStatus(projectId) || 'stopped';
+    const rawStatus = await nixDevServerManager.getStatus(projectId) || devServerManager.getStatus(projectId) || 'stopped';
     const url = nixDevServerManager.getUrl(projectId) || devServerManager.getServerUrl(projectId);
 
     // Reachability only matters if raw says running; otherwise keep raw

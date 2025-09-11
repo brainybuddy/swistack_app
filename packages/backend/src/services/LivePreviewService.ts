@@ -184,7 +184,7 @@ export class LivePreviewService {
         null;
 
       const status =
-        nixDevServerManager.getStatus(project.id) ||
+        (await nixDevServerManager.getStatus(project.id)) ||
         devServerManager.getStatus(project.id) ||
         'stopped';
 

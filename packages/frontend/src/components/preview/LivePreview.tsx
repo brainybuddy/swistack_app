@@ -1021,6 +1021,13 @@ export default function LivePreview({
   };
 
   const handleOpenInNewTab = () => {
+    // If dev server is actually running (not just starting), open its URL directly
+    if (devStatus === 'running' && devUrl) {
+      window.open(devUrl, '_blank');
+      return;
+    }
+    
+    // For 'starting' status or when dev server is not available, extract and open the HTML content
     if (iframeRef.current?.contentWindow) {
       const htmlContent = iframeRef.current.contentDocument?.documentElement.outerHTML;
       if (htmlContent) {
@@ -1094,7 +1101,7 @@ export default function LivePreview({
           {devStatus === 'running' && devUrl && (
             <div className="flex items-center space-x-1 text-xs text-blue-400">
               <Zap className="w-3 h-3" />
-              <span>Dev Server</span>
+              <span>Dev Server: {new URL(devUrl).host}</span>
             </div>
           )}
           {devStatus === 'starting' && (

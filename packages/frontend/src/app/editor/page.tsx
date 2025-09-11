@@ -1760,6 +1760,8 @@ export default function EditorPage() {
                   activeFileContent={editorValue}
                   previewKey={(template?.id as string) || (template?.key as string) || 'editor'}
                   projectId={!isTemplate ? (template?.id as string) : undefined}
+                  devUrl={devUrl}
+                  devStatus={devStatus}
                   className={`h-full -m-4 ${activeRightTab === 'preview' ? '' : 'hidden'}`}
                 />
                 

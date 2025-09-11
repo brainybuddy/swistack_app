@@ -41,6 +41,15 @@ export class NixDevServerManager {
       const project = await LivePreviewService.getProjectForPreview(projectId, userId);
       if (!project) return { success: false, error: 'Project not found' };
 
+      // Get port from project database
+      const { ProjectModel } = await import('../models/Project');
+      const projectData = await ProjectModel.findById(projectId);
+      const port = projectData?.frontendPort || project.ports?.frontend || 5200;
+      
+      if (!port) {
+        return { success: false, error: 'Project does not have allocated ports' };
+      }
+
       const repoDir = path.join(this.workspaceBase, 'repositories', projectId);
       await fs.mkdir(repoDir, { recursive: true });
 
@@ -48,7 +57,7 @@ export class NixDevServerManager {
       await this.writeProjectFiles(project, repoDir);
 
       // Ensure package.json dev script binds to allocated port
-      await this.ensurePackageJson(project, repoDir);
+      await this.ensurePackageJson(project, repoDir, port);
 
       // Ensure flake.nix exists (minimal dev shell for Node 18)
       await this.ensureFlake(repoDir);
@@ -57,7 +66,6 @@ export class NixDevServerManager {
       await this.ensureGitRepo(repoDir);
 
       // Run nix develop (provision tools) and start dev server
-      const port = project.ports.frontend;
       const server = await this.spawnNixDev(project, repoDir, port);
       if (!server) return { success: false, error: 'Failed to start Nix dev server' };
       this.servers.set(projectId, server);
@@ -131,18 +139,17 @@ export class NixDevServerManager {
     return this.logs.get(projectId) || [];
   }
 
-  private async ensurePackageJson(project: any, repoDir: string) {
+  private async ensurePackageJson(project: any, repoDir: string, port: number) {
     const pkgPath = path.join(repoDir, 'package.json');
     let pkg: any = { name: project.name.toLowerCase().replace(/\s+/g, '-'), version: '1.0.0', scripts: {} };
     try { pkg = { ...pkg, ...JSON.parse(await fs.readFile(pkgPath, 'utf8')) }; } catch {}
-    const alloc = portAllocationManager.getProjectAllocation(project.id);
-    if (alloc) {
-      // Prefer script that respects PORT env; fallback to explicit port
-      const devScript = pkg.scripts?.dev || '';
-      if (!/next\s+dev/.test(devScript)) {
-        pkg.scripts = { ...pkg.scripts, dev: `next dev -p ${alloc.frontendPort}` };
-      }
+    
+    // Use the provided port directly
+    const devScript = pkg.scripts?.dev || '';
+    if (!/next\s+dev/.test(devScript)) {
+      pkg.scripts = { ...pkg.scripts, dev: `next dev -p ${port}` };
     }
+    
     await fs.writeFile(pkgPath, JSON.stringify(pkg, null, 2), 'utf8');
   }
 
@@ -151,20 +158,23 @@ export class NixDevServerManager {
     try { await fs.access(flakePath); return; } catch {}
     const flake = `{
   description = "Next.js dev shell";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs";
-  outputs = { self, nixpkgs }: let
-    system = builtins.currentSystem;
-    pkgs = import nixpkgs { inherit system; };
-  in {
-    devShells.${'${system}'} = {
-      default = pkgs.mkShell {
-        buildInputs = [ pkgs.nodejs_18 pkgs.git pkgs.bashInteractive pkgs.watchman ];
-        shellHook = ''
-          corepack enable || true
-        '';
-      };
-    };
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs";
+    flake-utils.url = "github:numtide/flake-utils";
   };
+  
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+      in {
+        devShells.default = pkgs.mkShell {
+          buildInputs = [ pkgs.nodejs_20 pkgs.git pkgs.bashInteractive pkgs.watchman ];
+          shellHook = ''
+            corepack enable || true
+          '';
+        };
+      });
 }
 `;
     await fs.writeFile(flakePath, flake, 'utf8');
@@ -196,6 +206,34 @@ export class NixDevServerManager {
     } catch (e) {
       console.warn('[NixDev] ensureGitRepo warning:', e);
     }
+  }
+
+  private async checkPortAndUpdateStatus(server: NixDevServer, port: number): Promise<void> {
+    // Periodically check if the port becomes available
+    const checkInterval = setInterval(async () => {
+      try {
+        const http = await import('http');
+        const isAvailable = await new Promise<boolean>((resolve) => {
+          const req = http.get(`http://localhost:${port}`, { timeout: 1000 }, (res) => {
+            resolve(true);
+            res.resume();
+          });
+          req.on('timeout', () => { req.destroy(); resolve(false); });
+          req.on('error', () => resolve(false));
+        });
+        
+        if (isAvailable) {
+          server.status = 'running';
+          clearInterval(checkInterval);
+          this.appendLog(server.projectId, `✅ Dev server is now accessible at http://localhost:${port}`);
+        }
+      } catch (e) {
+        // Continue checking
+      }
+    }, 3000); // Check every 3 seconds
+    
+    // Stop checking after 5 minutes
+    setTimeout(() => clearInterval(checkInterval), 300000);
   }
 
   private async spawnNixDev(project: any, repoDir: string, port: number): Promise<NixDevServer | null> {
@@ -233,7 +271,14 @@ export class NixDevServerManager {
         });
         dev.stderr?.on('data', (d) => { const m = d.toString().trim(); console.error('[NixDev]', m); this.appendLog(project.id, `[stderr] ${m}`); });
         dev.on('error', (e) => { console.error('[NixDev] spawn error', e); if (!ready) resolve(null); });
-        setTimeout(() => { if (!ready) { /* still starting; reachability checked elsewhere */ resolve(server);} }, 40000);
+        setTimeout(() => { 
+          if (!ready) { 
+            // Server is taking time to start, but mark it as running if port is accessible
+            server.status = 'starting';
+            this.checkPortAndUpdateStatus(server, port);
+            resolve(server);
+          } 
+        }, 40000);
       });
       provision.on('error', (e) => { console.error('[NixDev] provision error', e); resolve(null); });
     });

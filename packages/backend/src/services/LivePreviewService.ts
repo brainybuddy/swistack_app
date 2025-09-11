@@ -2,6 +2,8 @@ import { ProjectFileModel } from '../models/ProjectFile';
 import { ProjectModel } from '../models/Project';
 import { portAllocationManager } from './PortAllocationManager';
 import { storageService } from './StorageService';
+import { nixDevServerManager } from './NixDevServerManager';
+import { devServerManager } from './DevServerManager';
 import path from 'path';
 
 export interface PreviewableProject {
@@ -126,7 +128,7 @@ export class LivePreviewService {
       }
 
       // Generate preview HTML
-      const html = this.compileProjectToHTML(previewableProject);
+      const html = await this.compileProjectToHTML(previewableProject);
 
       return { success: true, html };
     } catch (error) {
@@ -141,7 +143,11 @@ export class LivePreviewService {
   /**
    * Compile project files to HTML for preview
    */
-  static compileProjectToHTML(project: PreviewableProject): string {
+  static async compileProjectToHTML(project: PreviewableProject): Promise<string> {
+    // 1) Prefer a running Nix/Node dev server if present (auto-detect)
+    const detected = await this.detectDevServer(project);
+    if (detected) return detected;
+
     const fileMap = project.files.reduce((acc, file) => {
       if (file.type === 'file') {
         acc[file.path] = file.content;
@@ -163,6 +169,105 @@ export class LivePreviewService {
         return this.compileExpressProject(project, fileMap);
       default:
         return this.compileGenericProject(project, fileMap);
+    }
+  }
+
+  /**
+   * If a dev server is running (Nix or classic), present an iframe that auto-updates.
+   * Also handles 'starting' by probing the expected port and updating once live.
+   */
+  private static async detectDevServer(project: PreviewableProject): Promise<string | null> {
+    try {
+      const urlFromManagers =
+        nixDevServerManager.getUrl(project.id) ||
+        devServerManager.getServerUrl(project.id) ||
+        null;
+
+      const status =
+        nixDevServerManager.getStatus(project.id) ||
+        devServerManager.getStatus(project.id) ||
+        'stopped';
+
+      const candidateUrl = urlFromManagers || `http://localhost:${project.ports.frontend}`;
+
+      // Simple optimistic detection: if status is running or starting, try to embed and let JS probe.
+      if (status === 'running' || status === 'starting') {
+        return this.generateDevServerEmbed(project, candidateUrl, status);
+      }
+
+      // Fallback: quick HEAD/GET probe to the expected port (non-blocking: 500ms timeout)
+      const reachable = await this.quickProbe(candidateUrl, 600);
+      if (reachable) {
+        return this.generateDevServerEmbed(project, candidateUrl, 'running');
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private static generateDevServerEmbed(project: PreviewableProject, url: string, status: string): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${project.name} — Live Dev Server</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body, iframe { height: 100%; width: 100%; margin: 0; }
+    #bar { position: fixed; inset: 0 auto auto 0; height: 36px; width: 100%; background: rgba(17,24,39,.85); color: #fff; display:flex; align-items:center; gap:12px; padding:0 10px; z-index:9999; font: 12px/1.2 ui-sans-serif,system-ui; }
+    #frame { position: absolute; top: 36px; left: 0; right: 0; bottom: 0; border: 0; }
+    .pill { padding: 2px 8px; border-radius: 9999px; background: rgba(255,255,255,.12); }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <span>⚡ Dev Server</span>
+    <span class="pill">${status}</span>
+    <span class="pill">Front: ${project.ports.frontend}</span>
+    <a href="${url}" target="_blank" class="underline">Open</a>
+    <span id="hint" class="text-gray-300"></span>
+  </div>
+  <iframe id="frame" src="${url}"></iframe>
+  <script>
+    const url = ${JSON.stringify(url)};
+    const hint = document.getElementById('hint');
+    async function probeOnce(signal) {
+      try {
+        const res = await fetch(url, { method: 'GET', mode: 'no-cors', signal });
+        return true; // 'no-cors' always opaque; reaching here means no immediate network error
+      } catch (e) {
+        return false;
+      }
+    }
+    // Poll a few times while starting
+    let tries = 0;
+    const iv = setInterval(async () => {
+      tries++;
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 800);
+      const ok = await probeOnce(ctrl.signal);
+      clearTimeout(t);
+      if (ok) { hint.textContent = '' ; clearInterval(iv); }
+      else { hint.textContent = 'waiting for dev server…'; }
+      if (tries > 60) clearInterval(iv);
+    }, 1000);
+  </script>
+</body>
+</html>`;
+  }
+
+  private static async quickProbe(url: string, timeoutMs: number): Promise<boolean> {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), timeoutMs);
+      // Node 18 has global fetch
+      await fetch(url, { method: 'GET', mode: 'no-cors', signal: ctrl.signal as any });
+      clearTimeout(to);
+      return true;
+    } catch {
+      return false;
     }
   }
 

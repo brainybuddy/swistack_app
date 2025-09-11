@@ -82,8 +82,19 @@ export class PortAllocationManager {
     // Store allocation
     this.allocatedPorts.set(projectId, portAllocation);
     
-    // Update project's container config with port allocation
-    await this.updateProjectPorts(projectId, portAllocation);
+    // Only update project's container config if the project exists (not a temp ID)
+    // Temp IDs are UUIDs that will be replaced later via updateProjectId
+    try {
+      const { ProjectService } = await import('./ProjectService');
+      const project = await ProjectService.getProject(projectId);
+      if (project) {
+        // Project exists, update its ports
+        await this.updateProjectPorts(projectId, portAllocation);
+      }
+    } catch (e) {
+      // Project doesn't exist yet (temp ID), will be updated later
+      console.log(`📝 Port allocation stored for temp project ${projectId}, will update after creation`);
+    }
 
     console.log(`🔌 Port allocation for ${projectName}:`, {
       frontend: portAllocation.frontendPort,
@@ -170,6 +181,18 @@ export class PortAllocationManager {
 
     console.log(`🔌 Manual port reservation for ${projectName}:`, allocation);
     return allocation;
+  }
+
+  /**
+   * Update project ID after project creation (for when we allocate ports before creating the project)
+   */
+  public async updateProjectId(tempProjectId: string, actualProjectId: string): Promise<void> {
+    const allocation = this.allocatedPorts.get(tempProjectId);
+    if (allocation) {
+      allocation.projectId = actualProjectId;
+      this.allocatedPorts.delete(tempProjectId);
+      this.allocatedPorts.set(actualProjectId, allocation);
+    }
   }
 
   /**

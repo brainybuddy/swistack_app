@@ -19,6 +19,8 @@ export interface DatabaseProject {
   slug: string;
   storageUsed: number;
   storageLimit: number;
+  frontendPort?: number;
+  backendPort?: number;
   lastAccessedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -74,6 +76,8 @@ export class Project extends Model {
   slug!: string;
   storageUsed!: number;
   storageLimit!: number;
+  frontendPort?: number;
+  backendPort?: number;
   lastAccessedAt?: Date;
   createdAt!: Date;
   updatedAt!: Date;
@@ -298,6 +302,8 @@ export class ProjectModel {
     isPublic?: boolean;
     settings?: any;
     environment?: any;
+    frontendPort?: number;
+    backendPort?: number;
   }): Promise<DatabaseProject> {
     const slug = await this.generateUniqueSlug(data.name);
     
@@ -311,6 +317,8 @@ export class ProjectModel {
         settings: JSON.stringify(data.settings || {}),
         environment: JSON.stringify(data.environment || {}),
         slug,
+        frontend_port: data.frontendPort,
+        backend_port: data.backendPort,
       })
       .returning('*');
 

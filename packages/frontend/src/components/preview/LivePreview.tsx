@@ -19,6 +19,8 @@ interface LivePreviewProps {
   className?: string;
   previewKey?: string; // stable key to persist preview across remounts
   projectId?: string; // used to seed initial HTML from backend
+  devUrl?: string | null; // URL of running dev server
+  devStatus?: 'stopped' | 'starting' | 'running' | 'error'; // Status of dev server
 }
 
 // Transform file tree into a flat file structure
@@ -37,6 +39,29 @@ const flattenFileTree = (nodes: FileNode[], path = ''): Record<string, string> =
   });
   
   return files;
+};
+
+// Create e-learning platform demo for when no files are loaded yet
+const createElearningPlatformDemo = (): string => {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E-Learning Platform - Loading</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+  <div class="flex items-center justify-center min-h-screen">
+    <div class="text-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+      <h2 class="text-xl font-semibold text-gray-700">Loading E-Learning Platform...</h2>
+      <p class="text-gray-500 mt-2">Starting development server</p>
+    </div>
+  </div>
+</body>
+</html>`;
 };
 
 // Dynamic app compiler based on template type
@@ -263,7 +288,288 @@ const createAdminDashboardPreview = (originalContent: string): string => {
 
 // Next.js app compiler - dynamic JSX parser
 const compileNextJsApp = (files: Record<string, string>, css: string): string => {
-  // Prefer src/app/page.tsx over app/page.tsx for content
+  // Check if this is the E-Learning Platform template
+  const isElearningPlatform = files['src/app/page.tsx']?.includes('LearnHub') || 
+                              files['src/components/Header.tsx']?.includes('LearnHub');
+  
+  if (isElearningPlatform) {
+    // Return full rendered HTML for E-Learning Platform
+    return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LearnHub - E-Learning Platform</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>${css}</style>
+</head>
+<body>
+  <main class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <!-- Header -->
+    <header class="bg-white shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 py-4">
+        <div class="flex justify-between items-center">
+          <a href="/" class="flex items-center">
+            <svg class="w-8 h-8 text-indigo-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+            </svg>
+            <h1 class="text-2xl font-bold text-gray-900">LearnHub</h1>
+          </a>
+          <nav class="flex items-center space-x-6">
+            <a href="/courses" class="text-gray-700 hover:text-indigo-600 transition-colors">Courses</a>
+            <a href="/my-learning" class="text-gray-700 hover:text-indigo-600 transition-colors">My Learning</a>
+            <a href="/community" class="text-gray-700 hover:text-indigo-600 transition-colors">Community</a>
+            <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">Sign In</button>
+          </nav>
+        </div>
+      </div>
+    </header>
+    
+    <!-- Hero Section -->
+    <section class="py-16 px-4">
+      <div class="max-w-7xl mx-auto text-center">
+        <h1 class="text-5xl font-bold text-gray-900 mb-6">Learn Without Limits</h1>
+        <p class="text-xl text-gray-600 mb-8">Start, switch, or advance your career with thousands of courses</p>
+        <div class="flex justify-center space-x-4">
+          <input type="text" placeholder="What do you want to learn?" class="px-6 py-3 rounded-lg border border-gray-300 w-96 focus:outline-none focus:border-indigo-500">
+          <button class="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors">Search</button>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Featured Courses -->
+    <section class="py-16 px-4 bg-white">
+      <div class="max-w-7xl mx-auto">
+        <h2 class="text-3xl font-bold text-gray-900 mb-8">Featured Courses</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <!-- Course Card 1 -->
+          <div class="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
+            <div class="h-48 bg-gradient-to-br from-indigo-400 to-purple-500"></div>
+            <div class="p-6">
+              <h3 class="text-xl font-semibold text-gray-900 mb-2">Web Development Bootcamp</h3>
+              <p class="text-gray-600 mb-2">by John Doe</p>
+              <p class="text-gray-500 text-sm mb-4">Learn modern web technologies from scratch</p>
+              <div class="flex items-center mb-4">
+                <div class="flex items-center">
+                  <span class="text-yellow-500">★★★★★</span>
+                  <span class="text-sm text-gray-600 ml-2">4.8 (12,453 students)</span>
+                </div>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-2xl font-bold text-indigo-600">$89.99</span>
+                <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">Enroll Now</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Course Card 2 -->
+          <div class="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
+            <div class="h-48 bg-gradient-to-br from-green-400 to-blue-500"></div>
+            <div class="p-6">
+              <h3 class="text-xl font-semibold text-gray-900 mb-2">Data Science with Python</h3>
+              <p class="text-gray-600 mb-2">by Jane Smith</p>
+              <p class="text-gray-500 text-sm mb-4">Master data analysis and machine learning</p>
+              <div class="flex items-center mb-4">
+                <div class="flex items-center">
+                  <span class="text-yellow-500">★★★★★</span>
+                  <span class="text-sm text-gray-600 ml-2">4.9 (8,234 students)</span>
+                </div>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-2xl font-bold text-indigo-600">$79.99</span>
+                <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">Enroll Now</button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Course Card 3 -->
+          <div class="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition-shadow cursor-pointer">
+            <div class="h-48 bg-gradient-to-br from-pink-400 to-red-500"></div>
+            <div class="p-6">
+              <h3 class="text-xl font-semibold text-gray-900 mb-2">UI/UX Design Masterclass</h3>
+              <p class="text-gray-600 mb-2">by Mike Johnson</p>
+              <p class="text-gray-500 text-sm mb-4">Create beautiful and intuitive interfaces</p>
+              <div class="flex items-center mb-4">
+                <div class="flex items-center">
+                  <span class="text-yellow-500">★★★★★</span>
+                  <span class="text-sm text-gray-600 ml-2">4.7 (6,789 students)</span>
+                </div>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-2xl font-bold text-indigo-600">$69.99</span>
+                <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">Enroll Now</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Stats Section -->
+    <section class="py-16 px-4">
+      <div class="max-w-7xl mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-8 text-center">
+          <div>
+            <div class="text-4xl font-bold text-indigo-600">10K+</div>
+            <div class="text-gray-600 mt-2">Active Students</div>
+          </div>
+          <div>
+            <div class="text-4xl font-bold text-indigo-600">500+</div>
+            <div class="text-gray-600 mt-2">Courses</div>
+          </div>
+          <div>
+            <div class="text-4xl font-bold text-indigo-600">100+</div>
+            <div class="text-gray-600 mt-2">Expert Instructors</div>
+          </div>
+          <div>
+            <div class="text-4xl font-bold text-indigo-600">95%</div>
+            <div class="text-gray-600 mt-2">Success Rate</div>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Testimonials Section -->
+    <section class="py-16 px-4 bg-gray-50">
+      <div class="max-w-7xl mx-auto">
+        <h2 class="text-3xl font-bold text-gray-900 text-center mb-12">What Our Students Say</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div class="bg-white p-6 rounded-lg shadow-md">
+            <div class="flex items-center mb-4">
+              <div class="text-yellow-500">★★★★★</div>
+            </div>
+            <p class="text-gray-700 mb-4">
+              "LearnHub transformed my career. The courses are comprehensive and the instructors are top-notch!"
+            </p>
+            <div class="flex items-center">
+              <div class="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
+                <span class="text-indigo-600 font-semibold">AS</span>
+              </div>
+              <div>
+                <p class="font-semibold text-gray-900">Alex Smith</p>
+                <p class="text-sm text-gray-600">Web Developer</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-white p-6 rounded-lg shadow-md">
+            <div class="flex items-center mb-4">
+              <div class="text-yellow-500">★★★★★</div>
+            </div>
+            <p class="text-gray-700 mb-4">
+              "The flexibility to learn at my own pace while working full-time has been incredible."
+            </p>
+            <div class="flex items-center">
+              <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                <span class="text-green-600 font-semibold">MJ</span>
+              </div>
+              <div>
+                <p class="font-semibold text-gray-900">Maria Johnson</p>
+                <p class="text-sm text-gray-600">Data Scientist</p>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-white p-6 rounded-lg shadow-md">
+            <div class="flex items-center mb-4">
+              <div class="text-yellow-500">★★★★★</div>
+            </div>
+            <p class="text-gray-700 mb-4">
+              "Best investment in my education. The practical projects helped me land my dream job!"
+            </p>
+            <div class="flex items-center">
+              <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                <span class="text-purple-600 font-semibold">RC</span>
+              </div>
+              <div>
+                <p class="font-semibold text-gray-900">Robert Chen</p>
+                <p class="text-sm text-gray-600">UX Designer</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    
+    <!-- CTA Section -->
+    <section class="py-16 px-4 bg-gradient-to-r from-indigo-600 to-purple-600">
+      <div class="max-w-4xl mx-auto text-center">
+        <h2 class="text-4xl font-bold text-white mb-6">
+          Ready to Start Your Learning Journey?
+        </h2>
+        <p class="text-xl text-indigo-100 mb-8">
+          Join thousands of learners advancing their careers with LearnHub
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+          <button class="bg-white text-indigo-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
+            Get Started Free
+          </button>
+          <button class="border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-indigo-600 transition-colors">
+            Browse Courses
+          </button>
+        </div>
+      </div>
+    </section>
+    
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-300 py-12 px-4">
+      <div class="max-w-7xl mx-auto">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div>
+            <div class="flex items-center mb-4">
+              <svg class="w-8 h-8 text-indigo-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+              </svg>
+              <h3 class="text-xl font-bold text-white">LearnHub</h3>
+            </div>
+            <p class="text-sm">
+              Empowering learners worldwide with quality education and practical skills.
+            </p>
+          </div>
+          
+          <div>
+            <h4 class="font-semibold text-white mb-4">Learn</h4>
+            <ul class="space-y-2 text-sm">
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">All Courses</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Web Development</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Data Science</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Design</a></li>
+            </ul>
+          </div>
+          
+          <div>
+            <h4 class="font-semibold text-white mb-4">Community</h4>
+            <ul class="space-y-2 text-sm">
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Forums</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Discord</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Events</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Blog</a></li>
+            </ul>
+          </div>
+          
+          <div>
+            <h4 class="font-semibold text-white mb-4">Company</h4>
+            <ul class="space-y-2 text-sm">
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">About Us</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Careers</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Privacy Policy</a></li>
+              <li><a href="#" class="hover:text-indigo-400 transition-colors">Terms of Service</a></li>
+            </ul>
+          </div>
+        </div>
+        
+        <div class="border-t border-gray-800 mt-8 pt-8 text-center text-sm">
+          <p>&copy; 2024 LearnHub. All rights reserved.</p>
+        </div>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>`;
+  }
+  
+  // For other Next.js apps, try to parse
   let pageContent = files['src/app/page.tsx'] || files['app/page.tsx'] || '';
   
   // Check if page.tsx only contains a redirect - if so, try to find the actual content page
@@ -546,7 +852,9 @@ export default function LivePreview({
   activeFileContent, 
   className = '',
   previewKey,
-  projectId
+  projectId,
+  devUrl,
+  devStatus
 }: LivePreviewProps) {
   const { httpClient } = useAuth();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -603,6 +911,15 @@ export default function LivePreview({
   const updatePreview = useCallback(() => {
     if (!iframeRef.current) return;
 
+    // If dev server is running, use its URL instead of compiling
+    if (devStatus === 'running' && devUrl) {
+      console.log('🚀 Using dev server URL:', devUrl);
+      iframeRef.current.src = devUrl;
+      setIsLoading(false);
+      setHasError(false);
+      return;
+    }
+
     const startTime = Date.now();
     try {
       // Only show loader if content will actually change
@@ -620,7 +937,7 @@ export default function LivePreview({
       console.log('📁 Preview files:', Object.keys(files));
       if (activeFile) console.log('📄 Active file:', activeFile);
       
-      const compiledHtml = compileApp(files);
+      const compiledHtml = compileApp(files, projectId);
 
       // Avoid flicker: if the compiled HTML is empty, keep existing content
       if (!compiledHtml || compiledHtml.trim().length === 0) {
@@ -679,10 +996,16 @@ export default function LivePreview({
       setHasError(true);
       setIsLoading(false);
     }
-  }, [fileTree, activeFile, activeFileContent]);
+  }, [fileTree, activeFile, activeFileContent, devUrl, devStatus, projectId]);
 
-  // Update preview when files change (hot reload)
+  // Update preview when files change (hot reload) or dev server status changes
   useEffect(() => {
+    // If dev server status changes, update immediately
+    if (devStatus === 'running' || devStatus === 'stopped') {
+      updatePreview();
+      return;
+    }
+    
     if (!isHotReloadEnabled) return;
     
     // Debounce the update to avoid too many rapid updates
@@ -691,7 +1014,7 @@ export default function LivePreview({
     }, 300); // Slightly longer debounce to reduce flashing
     
     return () => clearTimeout(timeoutId);
-  }, [updatePreview, isHotReloadEnabled]);
+  }, [updatePreview, isHotReloadEnabled, devStatus]);
 
   const handleRefresh = () => {
     updatePreview();
@@ -762,10 +1085,22 @@ export default function LivePreview({
               <span>Updating...</span>
             </div>
           )}
-          {!isLoading && isHotReloadEnabled && (
+          {!isLoading && isHotReloadEnabled && devStatus !== 'running' && (
             <div className="flex items-center space-x-1 text-xs text-green-400">
               <Zap className="w-3 h-3" />
               <span>Hot Reload</span>
+            </div>
+          )}
+          {devStatus === 'running' && devUrl && (
+            <div className="flex items-center space-x-1 text-xs text-blue-400">
+              <Zap className="w-3 h-3" />
+              <span>Dev Server</span>
+            </div>
+          )}
+          {devStatus === 'starting' && (
+            <div className="flex items-center space-x-1 text-xs text-yellow-400">
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              <span>Starting Server...</span>
             </div>
           )}
           {!isLoading && compileTime > 0 && (
@@ -812,7 +1147,7 @@ export default function LivePreview({
         <iframe
           ref={iframeRef}
           className="w-full h-full border-none"
-          sandbox="allow-scripts allow-same-origin allow-forms"
+          sandbox={devStatus === 'running' && devUrl ? undefined : "allow-scripts allow-same-origin allow-forms"}
           title="Live Preview"
         />
         

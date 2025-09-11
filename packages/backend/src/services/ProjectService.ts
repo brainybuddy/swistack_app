@@ -4,6 +4,8 @@ import { TemplateService } from './TemplateService';
 import { storageService } from './StorageService';
 import { CreateProjectRequest, UpdateProjectRequest } from '@swistack/shared';
 import { portAllocationManager } from './PortAllocationManager';
+import { nixDevServerManager } from './NixDevServerManager';
+import { randomUUID } from 'crypto';
 
 export class ProjectService {
   static async createProject(
@@ -26,7 +28,16 @@ export class ProjectService {
       console.log('🏗️ Creating project from template:', template.name, 'with', template.files?.length, 'files');
       console.log('📦 Template data source:', data.templateData ? 'POST body' : 'database lookup');
 
-      // Create project
+      // Allocate ports for the project BEFORE creating it
+      console.log('🔌 Allocating ports for project:', data.name);
+      const tempProjectId = randomUUID(); // Temporary ID for port allocation
+      const portAllocation = await portAllocationManager.allocatePortsForProject(
+        tempProjectId, 
+        data.name, 
+        'spaced'
+      );
+
+      // Create project with allocated ports
       const project = await ProjectModel.create({
         name: data.name,
         description: data.description,
@@ -35,18 +46,31 @@ export class ProjectService {
         isPublic: data.isPublic || false,
         settings: data.settings || {},
         environment: data.environment || {},
+        frontendPort: portAllocation?.frontendPort,
+        backendPort: portAllocation?.backendPort,
       });
 
-      // Allocate ports for the project (default to 'spaced' strategy)
-      console.log('🔌 Allocating ports for project:', data.name);
-      const portAllocation = await portAllocationManager.allocatePortsForProject(
-        project.id, 
-        data.name, 
-        'spaced'
-      );
+      // Update port allocation with the actual project ID
+      if (portAllocation) {
+        await portAllocationManager.updateProjectId(tempProjectId, project.id);
+      }
 
       // Create project files from template with port allocation
       await this.createProjectFromTemplate(project.id, template, userId, portAllocation);
+
+      // Auto-start NixDevServer for the new project
+      console.log('🚀 Auto-starting NixDevServer for project:', project.name);
+      try {
+        const startResult = await nixDevServerManager.start(project.id, userId);
+        if (startResult.success) {
+          console.log('✅ NixDevServer auto-started successfully on port:', startResult.port);
+        } else {
+          console.warn('⚠️ NixDevServer auto-start failed:', startResult.error);
+        }
+      } catch (error) {
+        console.error('❌ Error auto-starting NixDevServer:', error);
+        // Don't fail project creation if dev server fails to start
+      }
 
       return project;
     } catch (error) {

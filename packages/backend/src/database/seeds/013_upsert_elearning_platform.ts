@@ -265,6 +265,151 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Testimonials Section */}
+      <section className="py-16 px-4 bg-gray-50">
+        <div className="max-w-7xl mx-auto">
+          <h2 className="text-3xl font-bold text-gray-900 text-center mb-12">What Our Students Say</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <div className="flex items-center mb-4">
+                <div className="text-yellow-500">★★★★★</div>
+              </div>
+              <p className="text-gray-700 mb-4">
+                "LearnHub transformed my career. The courses are comprehensive and the instructors are top-notch!"
+              </p>
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center mr-3">
+                  <span className="text-indigo-600 font-semibold">AS</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">Alex Smith</p>
+                  <p className="text-sm text-gray-600">Web Developer</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <div className="flex items-center mb-4">
+                <div className="text-yellow-500">★★★★★</div>
+              </div>
+              <p className="text-gray-700 mb-4">
+                "The flexibility to learn at my own pace while working full-time has been incredible."
+              </p>
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                  <span className="text-green-600 font-semibold">MJ</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">Maria Johnson</p>
+                  <p className="text-sm text-gray-600">Data Scientist</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white p-6 rounded-lg shadow-md">
+              <div className="flex items-center mb-4">
+                <div className="text-yellow-500">★★★★★</div>
+              </div>
+              <p className="text-gray-700 mb-4">
+                "Best investment in my education. The practical projects helped me land my dream job!"
+              </p>
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center mr-3">
+                  <span className="text-purple-600 font-semibold">RC</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">Robert Chen</p>
+                  <p className="text-sm text-gray-600">UX Designer</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-16 px-4 bg-gradient-to-r from-indigo-600 to-purple-600">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-4xl font-bold text-white mb-6">
+            Ready to Start Your Learning Journey?
+          </h2>
+          <p className="text-xl text-indigo-100 mb-8">
+            Join thousands of learners advancing their careers with LearnHub
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <button className="bg-white text-indigo-600 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors">
+              Get Started Free
+            </button>
+            <button className="border-2 border-white text-white px-8 py-3 rounded-lg font-semibold hover:bg-white hover:text-indigo-600 transition-colors">
+              Browse Courses
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-gray-300 py-12 px-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+            <div>
+              <div className="flex items-center mb-4">
+                <svg
+                  className="w-8 h-8 text-indigo-400 mr-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+                  />
+                </svg>
+                <h3 className="text-xl font-bold text-white">LearnHub</h3>
+              </div>
+              <p className="text-sm">
+                Empowering learners worldwide with quality education and practical skills.
+              </p>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-white mb-4">Learn</h4>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">All Courses</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Web Development</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Data Science</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Design</a></li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-white mb-4">Community</h4>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Forums</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Discord</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Events</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Blog</a></li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold text-white mb-4">Company</h4>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">About Us</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Careers</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Privacy Policy</a></li>
+                <li><a href="#" className="hover:text-indigo-400 transition-colors">Terms of Service</a></li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm">
+            <p>&copy; 2024 LearnHub. All rights reserved.</p>
+          </div>
+        </div>
+      </footer>
     </main>
   )
 }`

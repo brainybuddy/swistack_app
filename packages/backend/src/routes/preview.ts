@@ -65,7 +65,7 @@ router.get('/project/:projectId/html', authMiddleware, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Project not found or access denied' });
     }
 
-    const html = LivePreviewService.compileProjectToHTML(previewableProject);
+    const html = await LivePreviewService.compileProjectToHTML(previewableProject);
 
     // Return HTML directly
     res.setHeader('Content-Type', 'text/html');

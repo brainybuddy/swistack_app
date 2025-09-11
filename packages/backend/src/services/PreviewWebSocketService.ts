@@ -155,7 +155,7 @@ export class PreviewWebSocketService {
     try {
       const previewProject = await LivePreviewService.getProjectForPreview(projectId, userId);
       if (previewProject) {
-        const html = LivePreviewService.compileProjectToHTML(previewProject);
+        const html = await LivePreviewService.compileProjectToHTML(previewProject);
         
         socket.emit('preview-updated', {
           projectId,
@@ -192,7 +192,7 @@ export class PreviewWebSocketService {
     try {
       const previewProject = await LivePreviewService.getProjectForPreview(projectId, userId);
       if (previewProject) {
-        const html = LivePreviewService.compileProjectToHTML(previewProject);
+        const html = await LivePreviewService.compileProjectToHTML(previewProject);
         
         this.io.to(`preview:${projectId}`).emit('preview-updated', {
           projectId,
@@ -223,4 +223,3 @@ export class PreviewWebSocketService {
     return Array.from(this.previewClients.keys());
   }
 }
-

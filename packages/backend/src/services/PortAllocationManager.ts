@@ -373,33 +373,64 @@ export class PortAllocationManager {
       // Use dynamic import to avoid circular dependency
       const { Project } = await import('../models/Project');
       
-      // Get all projects with container configs
+      // Get all projects with container configs or port columns
       const projects = await Project.query()
-        .select('id', 'name', 'settings', 'createdAt')
+        .select('id', 'name', 'settings', 'createdAt', 'frontend_port', 'backend_port')
         .where('status', '!=', 'deleted');
 
       for (const project of projects) {
-        const ports = project.settings?.containerConfig?.ports;
-        if (ports && ports.frontend && ports.backend) {
-          // Reconstruct allocation from existing project
+        // First check if ports are in the database columns
+        if (project.frontend_port && project.backend_port) {
+          // Calculate reserved ports based on the allocation pattern
           const reservedPorts: number[] = [];
-          Object.entries(ports).forEach(([key, port]) => {
-            if (key.startsWith('reserved_') && typeof port === 'number') {
-              reservedPorts.push(port);
+          // For spaced strategy: reserved ports are between frontend and backend (excluding them)
+          if (project.backend_port === project.frontend_port + 10) {
+            // Spaced strategy pattern detected
+            for (let i = 1; i < 10; i++) {
+              reservedPorts.push(project.frontend_port + i);
             }
-          });
+          } else if (project.backend_port === project.frontend_port + 1) {
+            // Block-based strategy pattern detected
+            for (let i = 2; i < 10; i++) {
+              reservedPorts.push(project.frontend_port + i);
+            }
+          }
 
           const allocation: PortAllocation = {
             projectId: project.id,
             projectName: project.name,
-            frontendPort: ports.frontend as number,
-            backendPort: ports.backend as number,
+            frontendPort: project.frontend_port,
+            backendPort: project.backend_port,
             reservedPorts,
-            allocationStrategy: 'spaced', // Default assumption
+            allocationStrategy: project.backend_port === project.frontend_port + 10 ? 'spaced' : 'block-based',
             allocatedAt: project.createdAt
           };
 
           this.allocatedPorts.set(project.id, allocation);
+        } else {
+          // Fallback to checking settings.containerConfig.ports
+          const ports = project.settings?.containerConfig?.ports;
+          if (ports && ports.frontend && ports.backend) {
+            // Reconstruct allocation from existing project
+            const reservedPorts: number[] = [];
+            Object.entries(ports).forEach(([key, port]) => {
+              if (key.startsWith('reserved_') && typeof port === 'number') {
+                reservedPorts.push(port);
+              }
+            });
+
+            const allocation: PortAllocation = {
+              projectId: project.id,
+              projectName: project.name,
+              frontendPort: ports.frontend as number,
+              backendPort: ports.backend as number,
+              reservedPorts,
+              allocationStrategy: 'spaced', // Default assumption
+              allocatedAt: project.createdAt
+            };
+
+            this.allocatedPorts.set(project.id, allocation);
+          }
         }
       }
 

@@ -293,6 +293,11 @@ export class NixDevServerManager {
     return this.logs.get(projectId) || [];
   }
 
+  public clearLogs(projectId: string): void {
+    this.logs.set(projectId, []);
+    this.appendLog(projectId, '🗑️ Logs cleared');
+  }
+
   private async ensurePackageJson(project: any, repoDir: string, port: number) {
     const pkgPath = path.join(repoDir, 'package.json');
     let pkg: any = { name: project.name.toLowerCase().replace(/\s+/g, '-'), version: '1.0.0', scripts: {} };
@@ -564,80 +569,67 @@ export class NixDevServerManager {
         repoDir
       };
 
-      // Provision env first
-      console.log(`[NixDevServerManager] Starting nix provision for ${project.id}`);
+      // Skip separate provision step - directly run dev server in Nix shell
+      console.log(`[NixDevServerManager] Starting dev server in Nix shell for ${project.id}`);
       const nixEnv = { ...process.env, NIX_CONFIG: `${process.env.NIX_CONFIG || ''}\nexperimental-features = nix-command flakes`.trim() };
-      const provision = spawn('nix', ['--extra-experimental-features', 'nix-command flakes', 'develop'], { cwd: repoDir, stdio: 'pipe', env: nixEnv });
-      provision.stdout?.on('data', d => this.appendLog(project.id, `[nix develop] ${d.toString().trim()}`));
-      provision.stderr?.on('data', d => this.appendLog(project.id, `[nix develop] ${d.toString().trim()}`));
-      provision.on('close', (code) => {
-        if (code !== 0) {
-          console.error(`[NixDevServerManager] Nix provision failed with code ${code}`);
-          this.appendLog(project.id, `❌ Nix provision failed with code ${code}`);
-          resolve(null);
-          return;
-        }
-        
-        console.log(`[NixDevServerManager] Starting dev server for ${project.name} on port ${port}`);
-        // Start dev server in Nix environment (npm install already done)
-        const installAndRun = spawn('nix', [
-          '--extra-experimental-features', 'nix-command flakes', 
-          'develop', '-c', 
-          'bash', '-c', 
-          `PORT=${port} npm run dev`
-        ], { cwd: repoDir, stdio: 'pipe', env: nixEnv });
-        const dev = installAndRun;
-        server.process = dev;
+      
+      // Directly start dev server in Nix environment (npm install already done)
+      const installAndRun = spawn('nix', [
+        '--extra-experimental-features', 'nix-command flakes', 
+        'develop', '-c', 
+        'bash', '-c', 
+        `PORT=${port} npm run dev`
+      ], { cwd: repoDir, stdio: 'pipe', env: nixEnv });
+      const dev = installAndRun;
+      server.process = dev;
 
-        let ready = false;
-        dev.stdout?.on('data', (d) => {
-          const s = d.toString();
-          this.appendLog(project.id, s.trim());
-          
-          if (!ready && (s.includes(`http://localhost:${port}`) || s.toLowerCase().includes('ready'))) {
-            ready = true;
-            server.status = 'running';
-            resolve(server);
-          }
-        });
-        dev.stderr?.on('data', (d) => { 
-          const m = d.toString().trim(); 
-          console.error('[NixDev stderr]', m); 
-          this.appendLog(project.id, `[stderr] ${m}`);
-          
-          // Check for common error patterns
-          if (m.includes('EADDRINUSE')) {
-            console.error(`[NixDevServerManager] Port ${port} is already in use`);
-            server.status = 'error';
-            if (!ready) resolve(null);
-          } else if (m.includes('npm ERR!')) {
-            console.error(`[NixDevServerManager] npm error detected: ${m}`);
-            server.status = 'error';
-          }
-        });
-        dev.on('error', (e) => { 
-          console.error('[NixDev] spawn error', e); 
-          server.status = 'error';
-          if (!ready) resolve(null); 
-        });
-        dev.on('exit', (code, signal) => {
-          console.log(`[NixDevServerManager] Dev server exited with code ${code}, signal ${signal}`);
-          server.status = 'stopped';
-          if (!ready && code !== 0) {
-            resolve(null);
-          }
-        });
-        setTimeout(() => { 
-          if (!ready) { 
-            console.log(`[NixDevServerManager] Server didn't report ready after 60s, checking port accessibility...`);
-            // Server is taking time to start, but mark it as running if port is accessible
-            server.status = 'starting';
-            this.checkPortAndUpdateStatus(server, port);
-            resolve(server);
-          } 
-        }, 60000); // Wait 60 seconds for server to start
+      let ready = false;
+      dev.stdout?.on('data', (d) => {
+        const s = d.toString();
+        this.appendLog(project.id, s.trim());
+        
+        if (!ready && (s.includes(`http://localhost:${port}`) || s.toLowerCase().includes('ready'))) {
+          ready = true;
+          server.status = 'running';
+          resolve(server);
+        }
       });
-      provision.on('error', (e) => { console.error('[NixDev] provision error', e); resolve(null); });
+      dev.stderr?.on('data', (d) => { 
+        const m = d.toString().trim(); 
+        console.error('[NixDev stderr]', m); 
+        this.appendLog(project.id, `[stderr] ${m}`);
+        
+        // Check for common error patterns
+        if (m.includes('EADDRINUSE')) {
+          console.error(`[NixDevServerManager] Port ${port} is already in use`);
+          server.status = 'error';
+          if (!ready) resolve(null);
+        } else if (m.includes('npm ERR!')) {
+          console.error(`[NixDevServerManager] npm error detected: ${m}`);
+          server.status = 'error';
+        }
+      });
+      dev.on('error', (e) => { 
+        console.error('[NixDev] spawn error', e); 
+        server.status = 'error';
+        if (!ready) resolve(null); 
+      });
+      dev.on('exit', (code, signal) => {
+        console.log(`[NixDevServerManager] Dev server exited with code ${code}, signal ${signal}`);
+        server.status = 'stopped';
+        if (!ready && code !== 0) {
+          resolve(null);
+        }
+      });
+      setTimeout(() => { 
+        if (!ready) { 
+          console.log(`[NixDevServerManager] Server didn't report ready after 60s, checking port accessibility...`);
+          // Server is taking time to start, but mark it as running if port is accessible
+          server.status = 'starting';
+          this.checkPortAndUpdateStatus(server, port);
+          resolve(server);
+        } 
+      }, 60000); // Wait 60 seconds for server to start
     });
   }
 }
